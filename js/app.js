@@ -6,7 +6,7 @@ import {
 import * as S from './store.js';
 import { today, isDue, nextState, mastery, prioritize, shuffle, streak } from './leitner.js';
 
-const VERSION = '1.4.0';
+const VERSION = '1.5.0';
 const $app = document.getElementById('app');
 const $tab = document.getElementById('tabbar');
 const $halos = document.getElementById('halos');
@@ -232,7 +232,7 @@ async function viewSetup(uid) {
   let rules = '';
   try { rules = (await (await fetch('firestore.rules', { cache: 'no-store' })).text()).split('ADMIN_UID').join(uid); } catch { rules = ''; }
   $app.innerHTML = `<section class="list" style="gap:14px">
-    <div class="stroop-zone"><div class="bubble"><span class="who">Stroop</span>Presque prête ! Il reste à ouvrir ta base de données.</div>${stroopImg('dodo')}</div>
+    <div class="stroop-zone"><div class="bubble"><span class="who">Stroop</span>Presque prêt·e ! Il reste à ouvrir ta base de données.</div>${stroopImg('dodo')}</div>
     <h1>Dernier réglage</h1>
     <p style="margin:0">Ta base Firebase est encore verrouillée. Copie ces règles, colle-les dans Firebase (<b>Bases de données et stockage → Firestore → Règles</b>), puis clique sur <b>Publier</b>. Elles font de toi l’admin de la bibliothèque.</p>
     <button class="btn primary block" id="copy">${ic('copy')}Copier les règles</button>
@@ -279,7 +279,7 @@ async function viewHome() {
   </div>
   ${verifBanner()}
   ${weekStrip(u.jours)}
-  ${saved ? `<button class="cta" id="resume"><span><span class="t">Reprendre ma session</span><span class="s">${esc(saved.code)} · ${saved.i}/${saved.ids.length} · là où tu t’étais arrêtée</span></span><span class="go">${ic('arrow')}</span></button>` : ''}
+  ${saved ? `<button class="cta" id="resume"><span><span class="t">Reprendre ma session</span><span class="s">${esc(saved.code)} · ${saved.i}/${saved.ids.length} · là où tu t’étais arrêté·e</span></span><span class="go">${ic('arrow')}</span></button>` : ''}
   ${best || !S.isAdmin() ? (best ? `<button class="cta" id="daily" ${todo ? '' : 'disabled'}><span><span class="t">Session du jour</span><span class="s">${todo ? `${esc(best.m.code)} · ${plural(todo, 'carte')} · environ ${Math.max(2, Math.round(todo / 2))} min` : 'Rien à revoir pour l’instant'}</span></span><span class="go">${ic('arrow')}</span></button>` : '') : `<a class="cta" href="#/profil"><span><span class="t">Importer du contenu</span><span class="s">Ajoute ton premier fichier de révisions</span></span><span class="go">${ic('arrow')}</span></a>`}
   ${exams.length ? `<div class="row" style="flex-wrap:wrap">${exams.slice(0, 3).map((o) => `<span class="chip m c-${o.x.m.couleur}">${esc(o.x.m.code)} · ${daysUntil(o.e.t) === 0 ? 'aujourd’hui' : 'J-' + daysUntil(o.e.t)}</span>`).join('')}</div>` : ''}
   <div class="between"><h2 class="section-title">Mes matières</h2><span class="small muted">${esc(semestreLabel(u.semestre))}</span></div>
@@ -500,7 +500,7 @@ async function viewSession() {
     </div>
     <div class="row" style="flex-wrap:wrap"><span class="chip m">${esc(m.code)} · ${esc(shortChap(it.chapitreTitre))}</span><span class="chip">${p.box ? 'Boîte ' + p.box : 'Nouveau'}</span>${session.kind === 'rafale' ? `<span class="chip">${ic('bolt')} ${session.results.length} réponses</span>` : ''}</div>`;
 
-  const confRow = () => `<div class="conf" role="group" aria-label="Ma confiance">${[['sure', 'Sûre'], ['hesitante', 'Hésitante'], ['pif', 'Au pif']].map(([k, l]) => `<button data-conf="${k}" aria-pressed="${st.conf === k}">${l}</button>`).join('')}</div>`;
+  const confRow = () => `<div class="conf" role="group" aria-label="Ma confiance">${[['sure', 'Sûr·e'], ['hesitante', 'Hésitant·e'], ['pif', 'Au pif']].map(([k, l]) => `<button data-conf="${k}" aria-pressed="${st.conf === k}">${l}</button>`).join('')}</div>`;
 
   const answer = async (correct, extra = {}) => {
     if (st.answered && it.type === 'flashcard') return;
@@ -728,7 +728,7 @@ async function viewProfil() {
     </div>
     ${S.isAdmin() ? `<div class="card" style="padding:16px;display:flex;flex-direction:column;gap:12px">
       <h2 class="section-title">Importer du contenu</h2>
-      <p class="muted small" style="margin:0">Dépose les fichiers .json que Claude t’a préparés. Si une matière existe déjà, son contenu est remplacé et la progression de chacune est conservée.</p>
+      <p class="muted small" style="margin:0">Dépose les fichiers .json que Claude t’a préparés. Si une matière existe déjà, son contenu est remplacé et la progression de chacun·e est conservée.</p>
       <div id="drop" class="dropzone">
         ${ic('upload')}
         <b>Glisse tes fichiers .json ici</b>
@@ -738,7 +738,7 @@ async function viewProfil() {
       <div id="imp" class="list"></div>
     </div>
     <div class="card" style="padding:16px;display:flex;flex-direction:column;gap:12px">
-      <h2 class="section-title">Invitées · ${(S.getAcces()?.membres || []).length}</h2>
+      <h2 class="section-title">Invité·es · ${(S.getAcces()?.membres || []).length}</h2>
       <p class="muted small" style="margin:0">Ces personnes voient la même bibliothèque que toi, avec leur propre progression. Elles doivent se connecter avec cette adresse.</p>
       <div class="list">${(S.getAcces()?.membres || []).map((e) => `<div class="between"><span>${esc(e)}</span><button class="flag-btn" data-rm="${esc(e)}">Retirer</button></div>`).join('')}</div>
       <form id="inv" class="row"><label class="sr" for="invmail">Adresse e-mail</label><input id="invmail" type="email" placeholder="adresse@gmail.com" style="flex:1;border:2px solid var(--line);background:var(--card);border-radius:14px;padding:12px 14px;font-size:16px;min-width:0"><button class="btn primary" type="submit">Inviter</button></form>
