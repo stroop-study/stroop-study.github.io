@@ -6,7 +6,7 @@ import {
 import * as S from './store.js';
 import { today, isDue, nextState, mastery, prioritize, shuffle, streak } from './leitner.js';
 
-const VERSION = '1.1.0';
+const VERSION = '1.2.0';
 const $app = document.getElementById('app');
 const $tab = document.getElementById('tabbar');
 const $halos = document.getElementById('halos');
@@ -728,9 +728,14 @@ async function viewProfil() {
     </div>
     ${S.isAdmin() ? `<div class="card" style="padding:16px;display:flex;flex-direction:column;gap:12px">
       <h2 class="section-title">Importer du contenu</h2>
-      <p class="muted small" style="margin:0">Choisis le fichier .json que Claude t’a préparé. S’il existe déjà pour cette matière, il est remplacé ; ta progression est conservée.</p>
-      <label class="btn primary block">${ic('upload')}Choisir un fichier<input type="file" id="file" accept=".json,application/json" class="sr"></label>
-      <div id="imp"></div>
+      <p class="muted small" style="margin:0">Dépose les fichiers .json que Claude t’a préparés. Si une matière existe déjà, son contenu est remplacé et la progression de chacune est conservée.</p>
+      <div id="drop" class="dropzone">
+        ${ic('upload')}
+        <b>Glisse tes fichiers .json ici</b>
+        <span class="small muted">ou</span>
+        <label class="btn primary">Choisir des fichiers<input type="file" id="file" accept=".json,application/json" multiple class="sr"></label>
+      </div>
+      <div id="imp" class="list"></div>
     </div>
     <div class="card" style="padding:16px;display:flex;flex-direction:column;gap:12px">
       <h2 class="section-title">Invitées · ${(S.getAcces()?.membres || []).length}</h2>
@@ -762,18 +767,28 @@ async function viewProfil() {
   });
   $app.querySelectorAll('[data-rm]').forEach((b) => b.onclick = async () => { await S.setMembres((S.getAcces()?.membres || []).filter((x) => x !== b.dataset.rm)); viewProfil(); });
   const fileIn = document.getElementById('file');
-  if (fileIn) fileIn.onchange = async (e) => {
-    const file = e.target.files[0]; if (!file) return;
+  const importFiles = async (files) => {
     const out = document.getElementById('imp');
-    try {
-      const data = JSON.parse(await file.text());
-      const info = await S.importContenu(data);
-      out.innerHTML = `<p class="feedback ok"><b>Import réussi !</b>${esc(info.code)} : ${plural(info.nbChapitres, 'chapitre')}, ${plural(info.nbElements, 'élément')}.</p><a class="btn soft block" href="#/matiere/${encodeURIComponent(info.code)}">Voir ${esc(info.code)}</a>`;
-    } catch (er) {
-      out.innerHTML = `<p class="feedback ko"><b>Import impossible</b>${esc(er.message)}</p>`;
+    out.innerHTML = '';
+    for (const file of files) {
+      try {
+        if (!file.name.toLowerCase().endsWith('.json')) throw new Error('Ce n\u2019est pas un fichier .json.');
+        const data = JSON.parse(await file.text());
+        const info = await S.importContenu(data);
+        out.insertAdjacentHTML('beforeend', `<div class="feedback ok"><b>${esc(info.code)} importé !</b>${plural(info.nbChapitres, 'chapitre')}, ${plural(info.nbElements, 'élément')}. <a href="#/matiere/${encodeURIComponent(info.code)}">Voir ${esc(info.code)}</a></div>`);
+      } catch (er) {
+        const msg = er instanceof SyntaxError ? 'Le fichier est abîmé ou incomplet.' : er.message;
+        out.insertAdjacentHTML('beforeend', `<div class="feedback ko"><b>${esc(file.name)} : import impossible</b>${esc(msg)}</div>`);
+      }
     }
-    e.target.value = '';
   };
+  if (fileIn) fileIn.onchange = async (e) => { await importFiles([...e.target.files]); e.target.value = ''; };
+  const drop = document.getElementById('drop');
+  if (drop) {
+    ['dragenter', 'dragover'].forEach((ev) => drop.addEventListener(ev, (e) => { e.preventDefault(); drop.classList.add('over'); }));
+    ['dragleave', 'dragend'].forEach((ev) => drop.addEventListener(ev, () => drop.classList.remove('over')));
+    drop.addEventListener('drop', async (e) => { e.preventDefault(); drop.classList.remove('over'); await importFiles([...(e.dataTransfer?.files || [])]); });
+  }
   $app.querySelectorAll('[data-unflag]').forEach((b) => b.onclick = async () => { const [c, id] = b.dataset.unflag.split('|'); await S.unflagItem(c, id); viewProfil(); });
   document.getElementById('copyflags')?.addEventListener('click', async () => {
     const txt = 'Signalements de mon appli de révisions :\n\n' + flags.map((f) => `- ${f.matiere} · ${f.item.id} · « ${f.item.recto || f.item.question} »${f.flag.note ? ` → ${f.flag.note}` : ''}`).join('\n');
@@ -806,6 +821,9 @@ onAuthStateChanged(auth, async (user) => {
     $app.innerHTML = `<div class="card empty"><p><b>Impossible de charger tes données.</b></p><p class="muted small">${esc(e.message)}</p><button class="btn plain" onclick="location.reload()">Réessayer</button></div>`;
   }
 });
+
+// Évite que le navigateur ouvre un fichier lâché à côté de la zone de dépôt.
+['dragover', 'drop'].forEach((ev) => window.addEventListener(ev, (e) => { if (!e.target.closest?.('#drop')) e.preventDefault(); }));
 
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));
