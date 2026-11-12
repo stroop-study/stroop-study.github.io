@@ -13,14 +13,18 @@ const DEFAULT_MATIERES = [
   { code: 'PAT1', nom: 'Psychopathologie', couleur: 'vert' }
 ].map((m, i) => ({ ...m, ordre: i, semestre: 'L1-S1', examens: [], modalites: [], negatif: false }));
 
-const state = { uid: null, user: null, contenu: {}, progres: {} };
+const state = { uid: null, email: '', user: null, contenu: {}, progres: {}, isAdmin: false, acces: null, libOk: false };
+
+const withTimeout = (p, ms = 6000) => Promise.race([p, new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), ms))]);
 
 const userRef = () => doc(db, 'users', state.uid);
-const contenuRef = (code) => doc(db, 'users', state.uid, 'contenu', code);
+// Le contenu est dans une bibliothèque commune, gérée par l'admin et lisible par les invités.
+const contenuRef = (code) => doc(db, 'bibliotheque', code);
+const accesRef = () => doc(db, 'config', 'acces');
 const progresRef = (code) => doc(db, 'users', state.uid, 'progres', code);
 
-export async function loadUser(uid, displayName) {
-  state.uid = uid; state.contenu = {}; state.progres = {};
+export async function loadUser(uid, displayName, email) {
+  state.uid = uid; state.email = (email || '').toLowerCase(); state.contenu = {}; state.progres = {}; state.isAdmin = false; state.acces = null; state.libOk = false;
   const snap = await getDoc(userRef());
   if (snap.exists()) {
     state.user = snap.data();
@@ -41,6 +45,55 @@ export async function loadUser(uid, displayName) {
 }
 
 export const getUser = () => state.user;
+export const isAdmin = () => state.isAdmin;
+export const libOk = () => state.libOk;
+export const getAcces = () => state.acces;
+
+/** Détermine si la personne connectée est l'admin (seul l'admin peut créer la fiche d'accès). */
+export async function loadAcces() {
+  try {
+    const snap = await withTimeout(getDoc(accesRef()));
+    if (snap.exists()) {
+      state.acces = snap.data();
+      state.isAdmin = (state.acces.admins || []).includes(state.uid);
+    } else {
+      const a = { admins: [state.uid], membres: [] };
+      await withTimeout(setDoc(accesRef(), a));
+      state.acces = a; state.isAdmin = true;
+    }
+  } catch (e) {
+    state.isAdmin = false;
+  }
+  return state.isAdmin;
+}
+
+/** Charge toute la bibliothèque commune et ajoute ses matières à la liste de la personne. */
+export async function loadLibrary() {
+  try {
+    const snap = await withTimeout(getDocs(collection(db, 'bibliotheque')), 10000);
+    snap.forEach((d) => { state.contenu[d.id] = d.data(); });
+    state.libOk = true;
+  } catch (e) {
+    state.libOk = false;
+    return false;
+  }
+  const missing = Object.entries(state.contenu).filter(([code, c]) => c && !getMatiere(code));
+  if (missing.length) {
+    const list = [...state.user.matieres];
+    for (const [code, c] of missing) {
+      const m = c.matiere || {};
+      list.push({ code, nom: m.nom || code, couleur: COULEURS.includes(m.couleur) ? m.couleur : 'orange', semestre: m.semestre || state.user.semestre, ordre: list.length, examens: [], modalites: m.modalites || [], negatif: false });
+    }
+    await saveUser({ matieres: list });
+  }
+  return true;
+}
+
+export async function setMembres(membres) {
+  const clean = [...new Set(membres.map((e) => e.trim().toLowerCase()).filter(Boolean))];
+  await setDoc(accesRef(), { membres: clean }, { merge: true });
+  state.acces = { ...(state.acces || {}), membres: clean };
+}
 
 export async function saveUser(patch) {
   Object.assign(state.user, patch);
@@ -59,8 +112,11 @@ export async function saveMatiere(code, patch) {
 
 export async function getContenu(code) {
   if (state.contenu[code] !== undefined) return state.contenu[code];
-  const snap = await getDoc(contenuRef(code));
-  state.contenu[code] = snap.exists() ? snap.data() : null;
+  if (!state.libOk) return null;
+  try {
+    const snap = await getDoc(contenuRef(code));
+    state.contenu[code] = snap.exists() ? snap.data() : null;
+  } catch (e) { state.contenu[code] = null; }
   return state.contenu[code];
 }
 
@@ -141,11 +197,9 @@ export async function importContenu(data) {
 
 /** Export complet des données de l'utilisatrice. */
 export async function exportAll() {
-  const out = { exporteLe: new Date().toISOString(), user: state.user, contenu: {}, progres: {} };
-  for (const name of ['contenu', 'progres']) {
-    const snap = await getDocs(collection(db, 'users', state.uid, name));
-    snap.forEach((d) => { out[name][d.id] = d.data(); });
-  }
+  const out = { exporteLe: new Date().toISOString(), user: state.user, contenu: { ...state.contenu }, progres: {} };
+  const snap = await getDocs(collection(db, 'users', state.uid, 'progres'));
+  snap.forEach((d) => { out.progres[d.id] = d.data(); });
   return out;
 }
 

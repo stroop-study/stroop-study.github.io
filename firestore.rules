@@ -1,9 +1,28 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Chaque personne ne peut lire et écrire que ses propres données.
+
+    function connecte() { return request.auth != null; }
+    // Identifiant de l'admin : l'appli prépare ces règles avec le bon identifiant.
+    function admin() { return connecte() && request.auth.uid == 'ADMIN_UID'; }
+    function invite() {
+      return admin() || (connecte()
+        && request.auth.token.email_verified == true
+        && request.auth.token.email.lower() in get(/databases/$(database)/documents/config/acces).data.membres);
+    }
+
+    // Progression et réglages : chaque personne ne voit que les siens.
     match /users/{userId}/{document=**} {
-      allow read, write: if request.auth != null && request.auth.uid == userId;
+      allow read, write: if connecte() && request.auth.uid == userId;
+    }
+    // Bibliothèque commune : l'admin écrit, les invités lisent.
+    match /bibliotheque/{code} {
+      allow read: if invite();
+      allow write: if admin();
+    }
+    // Liste des invités : seule l'admin la voit et la modifie.
+    match /config/acces {
+      allow read, write: if admin();
     }
   }
 }

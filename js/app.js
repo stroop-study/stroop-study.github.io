@@ -1,12 +1,12 @@
 // Stroop · Révisions — application principale (routeur + écrans).
 import {
-  auth, onAuthStateChanged, GoogleAuthProvider, signInWithPopup, signInWithEmailAndPassword,
-  createUserWithEmailAndPassword, sendPasswordResetEmail, signOut
+  auth, onAuthStateChanged, GoogleAuthProvider, signInWithPopup, signInWithRedirect, getRedirectResult,
+  sendEmailVerification, signInWithEmailAndPassword, createUserWithEmailAndPassword, sendPasswordResetEmail, signOut
 } from './firebase.js';
 import * as S from './store.js';
 import { today, isDue, nextState, mastery, prioritize, shuffle, streak } from './leitner.js';
 
-const VERSION = '1.0.0';
+const VERSION = '1.1.0';
 const $app = document.getElementById('app');
 const $tab = document.getElementById('tabbar');
 const $halos = document.getElementById('halos');
@@ -93,8 +93,39 @@ async function route() {
 window.addEventListener('hashchange', route);
 
 /* ================= Connexion ================= */
-function viewLogin(mode = 'login', err = '') {
+const GOOGLE_SVG = '<svg width="20" height="20" viewBox="0 0 48 48" aria-hidden="true"><path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3C33.7 32.7 29.2 36 24 36c-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.8 1.2 7.9 3.1l5.7-5.7C34 6.1 29.3 4 24 4 12.9 4 4 12.9 4 24s8.9 20 20 20 20-8.9 20-20c0-1.3-.1-2.4-.4-3.5z"/><path fill="#FF3D00" d="M6.3 14.7l6.6 4.8C14.7 15.1 19 12 24 12c3.1 0 5.8 1.2 7.9 3.1l5.7-5.7C34 6.1 29.3 4 24 4 16.3 4 9.7 8.3 6.3 14.7z"/><path fill="#4CAF50" d="M24 44c5.2 0 9.9-2 13.4-5.2l-6.2-5.2C29.2 35.1 26.7 36 24 36c-5.2 0-9.6-3.3-11.3-8l-6.5 5C9.5 39.6 16.2 44 24 44z"/><path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3c-.8 2.2-2.2 4.2-4.1 5.6l6.2 5.2C37 39.2 44 34 44 24c0-1.3-.1-2.4-.4-3.5z"/></svg>';
+
+async function googleLogin(onErr) {
+  const provider = new GoogleAuthProvider();
+  provider.setCustomParameters({ prompt: 'select_account' });
+  try { await signInWithPopup(auth, provider); }
+  catch (er) {
+    const c = er?.code || '';
+    if (c.includes('popup-blocked') || c.includes('operation-not-supported') || c.includes('web-storage')) {
+      try { await signInWithRedirect(auth, provider); return; } catch (er2) { return onErr(authError(er2)); }
+    }
+    if (!c.includes('popup-closed') && !c.includes('cancelled-popup')) onErr(authError(er));
+  }
+}
+
+function viewLogin(mode = 'google', err = '') {
   noTab(); setHalo(null);
+  if (mode === 'google') {
+    $app.innerHTML = `
+    <section class="login">
+      <div class="stroop-zone">
+        <div class="bubble"><span class="who">Stroop</span>Coucou ! Connecte-toi et on révise ensemble.</div>
+        ${stroopImg('contente')}
+      </div>
+      <h1>Connexion</h1>
+      ${err ? `<p class="feedback ko" role="alert">${esc(err)}</p>` : ''}
+      <button class="btn plain block" id="google" style="min-height:58px">${GOOGLE_SVG}Continuer avec Google</button>
+      <button class="flag-btn" id="mail" style="align-self:center">Utiliser une adresse e-mail à la place</button>
+    </section>`;
+    document.getElementById('google').onclick = () => googleLogin((m) => viewLogin('google', m));
+    document.getElementById('mail').onclick = () => viewLogin('login');
+    return;
+  }
   const create = mode === 'create';
   $app.innerHTML = `
   <section class="login">
@@ -102,7 +133,7 @@ function viewLogin(mode = 'login', err = '') {
       <div class="bubble"><span class="who">Stroop</span>${create ? 'Bienvenue ! Crée ton compte, je t’attends.' : 'Coucou ! Connecte-toi et on révise ensemble.'}</div>
       ${stroopImg('contente')}
     </div>
-    <h1>${create ? 'Créer mon compte' : 'Connexion'}</h1>
+    <h1>${create ? 'Créer mon compte' : 'Connexion par e-mail'}</h1>
     <form id="f" class="list" novalidate>
       <label class="field">Adresse e-mail<input type="email" name="email" autocomplete="email" required></label>
       <label class="field">Mot de passe<input type="password" name="pw" autocomplete="${create ? 'new-password' : 'current-password'}" minlength="6" required></label>
@@ -114,15 +145,14 @@ function viewLogin(mode = 'login', err = '') {
       ${create ? '' : '<button class="flag-btn" id="reset">Mot de passe oublié</button>'}
     </div>
     <div class="divider">ou</div>
-    <button class="btn plain block" id="google">Continuer avec Google</button>
-    <p class="muted small" style="text-align:center">Sur iPhone, une fois l’appli installée sur l’écran d’accueil, la connexion par e-mail est la plus fiable.</p>
+    <button class="btn plain block" id="google">${GOOGLE_SVG}Continuer avec Google</button>
   </section>`;
   const f = document.getElementById('f');
   f.onsubmit = async (e) => {
     e.preventDefault();
     const email = f.email.value.trim(), pw = f.pw.value;
     try {
-      if (create) await createUserWithEmailAndPassword(auth, email, pw);
+      if (create) { const cred = await createUserWithEmailAndPassword(auth, email, pw); sendEmailVerification(cred.user).catch(() => {}); }
       else await signInWithEmailAndPassword(auth, email, pw);
     } catch (er) { viewLogin(mode, authError(er)); }
   };
@@ -133,9 +163,7 @@ function viewLogin(mode = 'login', err = '') {
     if (!email) return viewLogin(mode, 'Indique ton adresse e-mail, puis touche « Mot de passe oublié ».');
     try { await sendPasswordResetEmail(auth, email); toast('E-mail de réinitialisation envoyé'); } catch (er) { viewLogin(mode, authError(er)); }
   };
-  document.getElementById('google').onclick = async () => {
-    try { await signInWithPopup(auth, new GoogleAuthProvider()); } catch (er) { viewLogin(mode, authError(er)); }
-  };
+  document.getElementById('google').onclick = () => googleLogin((m) => viewLogin(mode, m));
 }
 function authError(e) {
   const c = e?.code || '';
@@ -184,6 +212,40 @@ function weekStrip(jours) {
   return `<div class="card week" aria-label="Ma semaine">${html}</div>`;
 }
 
+/* ================= Accès à la bibliothèque ================= */
+const needsVerif = () => auth.currentUser && !auth.currentUser.emailVerified && !S.isAdmin();
+function verifBanner() {
+  if (!needsVerif()) return '';
+  return `<div class="card" style="padding:14px;display:flex;flex-direction:column;gap:10px"><b>Confirme ton adresse e-mail</b><span class="small muted">Clique sur le lien reçu par e-mail pour accéder au contenu partagé, puis touche « C’est fait ».</span><div class="two"><button class="btn plain" id="resend">Renvoyer le mail</button><button class="btn primary" id="verified">C’est fait</button></div></div>`;
+}
+function bindVerif() {
+  document.getElementById('resend')?.addEventListener('click', async () => { try { await sendEmailVerification(auth.currentUser); toast('E-mail renvoyé'); } catch { toast('Réessaie dans quelques minutes'); } });
+  document.getElementById('verified')?.addEventListener('click', async () => {
+    await auth.currentUser.reload(); await auth.currentUser.getIdToken(true);
+    if (!auth.currentUser.emailVerified) return toast('Adresse pas encore confirmée');
+    await S.loadLibrary(); toast('Adresse confirmée !'); route();
+  });
+}
+
+async function viewSetup(uid) {
+  noTab(); setHalo(null);
+  let rules = '';
+  try { rules = (await (await fetch('firestore.rules', { cache: 'no-store' })).text()).split('ADMIN_UID').join(uid); } catch { rules = ''; }
+  $app.innerHTML = `<section class="list" style="gap:14px">
+    <div class="stroop-zone"><div class="bubble"><span class="who">Stroop</span>Presque prête ! Il reste à ouvrir ta base de données.</div>${stroopImg('dodo')}</div>
+    <h1>Dernier réglage</h1>
+    <p style="margin:0">Ta base Firebase est encore verrouillée. Copie ces règles, colle-les dans Firebase (<b>Bases de données et stockage → Firestore → Règles</b>), puis clique sur <b>Publier</b>. Elles font de toi l’admin de la bibliothèque.</p>
+    <button class="btn primary block" id="copy">${ic('copy')}Copier les règles</button>
+    <pre class="card" style="padding:12px;font-size:11px;white-space:pre-wrap;overflow:auto;max-height:240px;margin:0">${esc(rules)}</pre>
+    <p class="small muted" style="margin:0">Ton identifiant : <code>${esc(uid)}</code></p>
+    <button class="btn plain block" id="retry">C’est publié, on réessaie</button>
+    <button class="flag-btn" id="out" style="align-self:center">Me déconnecter</button>
+  </section>`;
+  document.getElementById('copy').onclick = async () => { try { await navigator.clipboard.writeText(rules); toast('Règles copiées !'); } catch { toast('Copie impossible : sélectionne le texte à la main'); } };
+  document.getElementById('retry').onclick = () => location.reload();
+  document.getElementById('out').onclick = () => signOut(auth);
+}
+
 /* ================= Accueil ================= */
 async function viewHome() {
   tabbar('#/'); setHalo(null);
@@ -196,7 +258,7 @@ async function viewHome() {
   const todo = best ? Math.min(12, best.due + best.neufs) : 0;
 
   let bubble;
-  if (!avecContenu.length) bubble = 'Zzz… Importe ton premier contenu dans Profil et on commence !';
+  if (!avecContenu.length) bubble = S.isAdmin() ? 'Zzz… Importe ton premier contenu dans Profil et on commence !' : 'Zzz… Le contenu n’est pas encore arrivé. Je fais une petite sieste en attendant.';
   else if (mood === 'dodo') bubble = s ? `Zzz… Ta série de ${plural(s, 'jour')} m’attend. Une carte suffit à me réveiller !` : 'Zzz… Une seule carte suffit pour me réveiller.';
   else if (mood === 'sport') bubble = `${s} jours d’affilée ! Super Stroop est à fond, on continue ?`;
   else bubble = todo ? 'Journée validée ! On s’en refait une petite ?' : 'Journée validée, et tout est à jour. Bravo !';
@@ -215,9 +277,10 @@ async function viewHome() {
     <div class="bubble" id="bubble"><span class="who">Stroop</span><span id="btxt">${esc(bubble)}</span></div>
     ${stroopImg(mood)}
   </div>
+  ${verifBanner()}
   ${weekStrip(u.jours)}
   ${saved ? `<button class="cta" id="resume"><span><span class="t">Reprendre ma session</span><span class="s">${esc(saved.code)} · ${saved.i}/${saved.ids.length} · là où tu t’étais arrêtée</span></span><span class="go">${ic('arrow')}</span></button>` : ''}
-  ${best ? `<button class="cta" id="daily" ${todo ? '' : 'disabled'}><span><span class="t">Session du jour</span><span class="s">${todo ? `${esc(best.m.code)} · ${plural(todo, 'carte')} · environ ${Math.max(2, Math.round(todo / 2))} min` : 'Rien à revoir pour l’instant'}</span></span><span class="go">${ic('arrow')}</span></button>` : `<a class="cta" href="#/profil"><span><span class="t">Importer du contenu</span><span class="s">Ajoute ton premier fichier de révisions</span></span><span class="go">${ic('arrow')}</span></a>`}
+  ${best || !S.isAdmin() ? (best ? `<button class="cta" id="daily" ${todo ? '' : 'disabled'}><span><span class="t">Session du jour</span><span class="s">${todo ? `${esc(best.m.code)} · ${plural(todo, 'carte')} · environ ${Math.max(2, Math.round(todo / 2))} min` : 'Rien à revoir pour l’instant'}</span></span><span class="go">${ic('arrow')}</span></button>` : '') : `<a class="cta" href="#/profil"><span><span class="t">Importer du contenu</span><span class="s">Ajoute ton premier fichier de révisions</span></span><span class="go">${ic('arrow')}</span></a>`}
   ${exams.length ? `<div class="row" style="flex-wrap:wrap">${exams.slice(0, 3).map((o) => `<span class="chip m c-${o.x.m.couleur}">${esc(o.x.m.code)} · ${daysUntil(o.e.t) === 0 ? 'aujourd’hui' : 'J-' + daysUntil(o.e.t)}</span>`).join('')}</div>` : ''}
   <div class="between"><h2 class="section-title">Mes matières</h2><span class="small muted">${esc(semestreLabel(u.semestre))}</span></div>
   <div class="subjects">
@@ -235,6 +298,7 @@ async function viewHome() {
     const lines = ['Hop hop hop, au boulot !', 'Tu sais que je suis une loutre ultra motivée ?', 'Une carte, puis une autre… et voilà !', 'Effet Stroop : dire la couleur, pas le mot. Facile, non ?', 'Je crois en toi (et en tes neurones).'];
     document.getElementById('btxt').textContent = lines[Math.floor(Math.random() * lines.length)];
   };
+  bindVerif();
   document.getElementById('resume')?.addEventListener('click', () => { session = saved; go('#/session'); });
   document.getElementById('daily')?.addEventListener('click', () => startSession({ code: best.m.code, kind: 'jour' }));
 }
@@ -269,7 +333,7 @@ async function viewMatiere(code) {
   const x = await matiereStats(m);
   if (!x.contenu) {
     $app.innerHTML = `${backBtn()}<div class="c-${m.couleur}"><div class="mat-head"><div><div class="code">${esc(m.code)}</div><b>${esc(m.nom)}</b></div></div></div>
-      <div class="card empty"><img class="stroop small a-dodo" src="assets/stroop/stroop-dodo.webp" alt=""><p><b>Pas encore de contenu ici.</b></p><p class="muted small">Envoie tes supports à Claude, puis importe le fichier qu’il te donne depuis l’onglet Profil.</p><a class="btn plain" href="#/profil">Aller à l’import</a></div>
+      <div class="card empty"><img class="stroop small a-dodo" src="assets/stroop/stroop-dodo.webp" alt=""><p><b>Pas encore de contenu ici.</b></p>${S.isAdmin() ? '<p class="muted small">Envoie tes supports à Claude, puis importe le fichier qu’il te donne depuis l’onglet Profil.</p><a class="btn plain" href="#/profil">Aller à l’import</a>' : '<p class="muted small">Il arrivera dès qu’il sera ajouté à la bibliothèque commune.</p>'}</div>
       ${examBlock(m)}`;
     bindExam(m);
     return;
@@ -662,12 +726,21 @@ async function viewProfil() {
       <div class="field">Apparence<div class="seg" role="group">${[['auto', 'Auto'], ['clair', 'Clair'], ['sombre', 'Sombre']].map(([k, l]) => `<button data-th="${k}" aria-pressed="${theme === k}">${l}</button>`).join('')}</div></div>
       <label class="field">Semestre en cours<input id="sem" value="${esc(u.semestre || '')}" placeholder="ex. L1-S2"></label>
     </div>
-    <div class="card" style="padding:16px;display:flex;flex-direction:column;gap:12px">
+    ${S.isAdmin() ? `<div class="card" style="padding:16px;display:flex;flex-direction:column;gap:12px">
       <h2 class="section-title">Importer du contenu</h2>
       <p class="muted small" style="margin:0">Choisis le fichier .json que Claude t’a préparé. S’il existe déjà pour cette matière, il est remplacé ; ta progression est conservée.</p>
       <label class="btn primary block">${ic('upload')}Choisir un fichier<input type="file" id="file" accept=".json,application/json" class="sr"></label>
       <div id="imp"></div>
     </div>
+    <div class="card" style="padding:16px;display:flex;flex-direction:column;gap:12px">
+      <h2 class="section-title">Invitées · ${(S.getAcces()?.membres || []).length}</h2>
+      <p class="muted small" style="margin:0">Ces personnes voient la même bibliothèque que toi, avec leur propre progression. Elles doivent se connecter avec cette adresse.</p>
+      <div class="list">${(S.getAcces()?.membres || []).map((e) => `<div class="between"><span>${esc(e)}</span><button class="flag-btn" data-rm="${esc(e)}">Retirer</button></div>`).join('')}</div>
+      <form id="inv" class="row"><label class="sr" for="invmail">Adresse e-mail</label><input id="invmail" type="email" placeholder="adresse@gmail.com" style="flex:1;border:2px solid var(--line);background:var(--card);border-radius:14px;padding:12px 14px;font-size:16px;min-width:0"><button class="btn primary" type="submit">Inviter</button></form>
+    </div>` : `<div class="card" style="padding:16px;display:flex;flex-direction:column;gap:8px">
+      <h2 class="section-title">Bibliothèque partagée</h2>
+      <p class="muted small" style="margin:0">${S.libOk() ? 'Tu as accès au contenu commun. Ta progression n’appartient qu’à toi.' : `Tu n’as pas encore accès au contenu commun. Donne cette adresse à l’admin : <b>${esc(auth.currentUser?.email || '')}</b>`}</p>
+    </div>`}
     <div class="card" style="padding:16px;display:flex;flex-direction:column;gap:12px">
       <h2 class="section-title">Signalements · ${flags.length}</h2>
       ${flags.length ? `<div class="list">${flags.map((f) => `<div class="between" style="align-items:flex-start"><div><b class="small">${esc(f.matiere)} · ${esc(f.item.id)}</b><div class="small muted">${esc(f.item.recto || f.item.question)}</div>${f.flag.note ? `<div class="small">« ${esc(f.flag.note)} »</div>` : ''}</div><button class="flag-btn" data-unflag="${esc(f.matiere)}|${esc(f.item.id)}">Retirer</button></div>`).join('')}</div>
@@ -682,7 +755,14 @@ async function viewProfil() {
   document.getElementById('prenom').onchange = (e) => S.saveUser({ prenom: e.target.value.trim() }).then(() => toast('Enregistré'));
   document.getElementById('sem').onchange = (e) => S.saveUser({ semestre: e.target.value.trim() || 'L1-S1' }).then(() => toast('Enregistré'));
   $app.querySelectorAll('[data-th]').forEach((b) => b.onclick = () => { localStorage.setItem('theme', b.dataset.th); S.saveUser({ theme: b.dataset.th }); applyTheme(); viewProfil(); });
-  document.getElementById('file').onchange = async (e) => {
+  document.getElementById('inv')?.addEventListener('submit', async (e) => {
+    e.preventDefault(); const v = document.getElementById('invmail').value.trim();
+    if (!v || !v.includes('@')) return toast('Adresse e-mail invalide');
+    await S.setMembres([...(S.getAcces()?.membres || []), v]); toast('Invitation enregistrée'); viewProfil();
+  });
+  $app.querySelectorAll('[data-rm]').forEach((b) => b.onclick = async () => { await S.setMembres((S.getAcces()?.membres || []).filter((x) => x !== b.dataset.rm)); viewProfil(); });
+  const fileIn = document.getElementById('file');
+  if (fileIn) fileIn.onchange = async (e) => {
     const file = e.target.files[0]; if (!file) return;
     const out = document.getElementById('imp');
     try {
@@ -709,16 +789,20 @@ async function viewProfil() {
 }
 
 /* ================= Démarrage ================= */
+getRedirectResult(auth).catch((e) => { if (!auth.currentUser) viewLogin('google', authError(e)); });
 onAuthStateChanged(auth, async (user) => {
   currentUser = user;
   if (!user) return viewLogin();
   $app.innerHTML = `<div class="splash">${stroopImg('dodo')}<p>Stroop se réveille…</p></div>`;
   try {
-    const u = await S.loadUser(user.uid, user.displayName);
+    const u = await S.loadUser(user.uid, user.displayName, user.email);
     if (u.theme && !localStorage.getItem('theme')) { localStorage.setItem('theme', u.theme); applyTheme(); }
+    await S.loadAcces();
+    await S.loadLibrary();
     route();
   } catch (e) {
     console.error(e);
+    if (String(e?.code || e?.message).includes('permission')) return viewSetup(user.uid);
     $app.innerHTML = `<div class="card empty"><p><b>Impossible de charger tes données.</b></p><p class="muted small">${esc(e.message)}</p><button class="btn plain" onclick="location.reload()">Réessayer</button></div>`;
   }
 });
