@@ -4,10 +4,10 @@ import {
   sendEmailVerification, signInWithEmailAndPassword, createUserWithEmailAndPassword, sendPasswordResetEmail, signOut
 } from './firebase.js';
 import * as S from './store.js';
-import { today, isDue, nextState, mastery, seenCount, prioritize, shuffle, streak } from './leitner.js';
+import { today, isDue, dueDate, nextState, mastery, seenCount, prioritize, shuffle, streak, INTERVALS } from './leitner.js';
 import { TYPES, TYPE_KEYS, NIVEAUX, typeLabel, timeFor, formatOf, checkCourte, sameSet } from './types.js';
 
-const VERSION = '2.0.1';
+const VERSION = '2.1.0';
 const $app = document.getElementById('app');
 const $tab = document.getElementById('tabbar');
 const $halos = document.getElementById('halos');
@@ -335,10 +335,10 @@ function getCfg(code) {
     types: Array.isArray(c.types) && c.types.length ? c.types.filter((t) => TYPE_KEYS.includes(t)) : TYPE_KEYS.slice(),
     n: c.n ?? 20,
     niveau: c.niveau ?? 'tous',
-    chrono: !!c.chrono
+    chrono: c.v === 2 ? !!c.chrono : true
   };
 }
-const saveCfg = (code, cfg) => localStorage.setItem(CFG_KEY(code), JSON.stringify(cfg));
+const saveCfg = (code, cfg) => localStorage.setItem(CFG_KEY(code), JSON.stringify({ ...cfg, v: 2 }));
 const matchCfg = (it, cfg) => cfg.types.includes(it.type) && (cfg.niveau === 'tous' || (it.niveau || 1) === Number(cfg.niveau));
 function cfgSummary(cfg) {
   const t = cfg.types.length === TYPE_KEYS.length ? 'tous les types' : plural(cfg.types.length, 'type');
@@ -377,6 +377,13 @@ async function viewMatiere(code) {
           <div class="small muted">Vu : ${x.vus}/${x.total} · ${plural(x.erreurs, 'erreur')} à revoir${ex ? ` · examen J-${daysUntil(ex.t)}` : ''}</div></div>
         <button class="ring" id="ringinfo" aria-label="Maîtrise ${x.maitrise} %, comment c’est calculé" style="border:none;background:conic-gradient(var(--m-acc) 0 ${x.maitrise}%, var(--ghost) ${x.maitrise}% 100%)"><div><b>${pct(x.maitrise)}</b><small>maîtrise ⓘ</small></div></button>
       </div>
+      <div class="between"><h2 class="section-title">Mes boîtes</h2><button class="flag-btn" id="tuto" style="color:var(--m-ink);font-weight:800">Comment ça marche ?</button></div>
+      <div class="boxes">${[0, 1, 2, 3, 4, 5].map((b) => {
+        const its = x.items.filter((it) => (x.prog[it.id]?.box || 0) === b);
+        const due = b === 0 ? 0 : its.filter((it) => isDue(x.prog[it.id])).length;
+        return `<button class="boxtile b${b}" data-box="${b}" aria-label="${b ? 'Boîte ' + b : 'Jamais vues'} : ${its.length} cartes${due ? ', ' + due + ' à revoir' : ''}">
+          <span class="bl">${b ? 'B' + b : 'Neuves'}</span><b>${its.length}</b><span class="bd">${due ? due + ' à revoir' : b ? 'J+' + INTERVALS[b] : '&nbsp;'}</span></button>`;
+      }).join('')}</div>
       <div class="between"><h2 class="section-title">Chapitres à réviser</h2><button class="flag-btn" id="all" style="color:var(--m-ink);font-weight:800">${all ? 'Tout décocher' : 'Tout cocher'}</button></div>
       <div class="list">
         ${chaps.map((c) => {
@@ -404,6 +411,8 @@ async function viewMatiere(code) {
     $app.querySelectorAll('[data-fiche]').forEach((b) => b.onclick = () => ficheSheet(m, chaps.find((c) => c.id === b.dataset.fiche)));
     document.getElementById('all').onclick = () => { if (all) st.sel.clear(); else chaps.forEach((c) => st.sel.add(c.id)); render(); };
     document.getElementById('ringinfo').onclick = () => masteryInfo(m);
+    document.getElementById('tuto').onclick = () => leitnerTuto(m);
+    $app.querySelectorAll('[data-box]').forEach((b) => b.onclick = () => boxSheet(m, x, Number(b.dataset.box)));
     document.getElementById('cfg').onclick = () => cfgSheet(m, x, st, render);
     const opts = { code, chapitres: [...st.sel] };
     document.getElementById('go').onclick = () => startSession({ ...opts, kind: 'normal' });
@@ -412,6 +421,37 @@ async function viewMatiere(code) {
     document.getElementById('gear').onclick = () => matiereSheet(m, render);
   };
   render();
+  if (!localStorage.getItem('stroop-tuto-leitner')) { localStorage.setItem('stroop-tuto-leitner', '1'); leitnerTuto(m); }
+}
+
+const itemLabel = (it) => it.recto || it.question || it.affirmation || it.scenario || '';
+
+function boxSheet(m, x, b) {
+  const its = x.items.filter((it) => (x.prog[it.id]?.box || 0) === b)
+    .map((it) => ({ it, due: b ? dueDate(x.prog[it.id]) : 0 }))
+    .sort((a, c) => a.due - c.due);
+  const sh = openSheet(`
+    <div class="between"><h2>${b ? `Boîte ${b}` : 'Cartes jamais vues'} · ${its.length}</h2><button class="icon-btn" data-close aria-label="Fermer">${ic('close')}</button></div>
+    <p class="small muted" style="margin:0">${b ? `Une carte de la boîte ${b} revient ${INTERVALS[b] === 1 ? 'le lendemain' : INTERVALS[b] + ' jours'} après sa dernière montée.` : 'Ces cartes n’ont encore jamais été vues.'}</p>
+    ${its.length ? `<button class="btn primary block" id="revbox">Réviser ces ${plural(its.length, 'carte')}</button>` : ''}
+    <div class="list">${its.slice(0, 200).map(({ it, due }) => `<div class="card boxitem"><span class="small muted">${esc(shortChap(it.chapitreTitre))} · ${esc(typeLabel(it.type))}</span><span class="bt">${esc(itemLabel(it))}</span>${b ? `<span class="small ${isDue(x.prog[it.id]) ? 'due' : 'muted'}">${isDue(x.prog[it.id]) ? 'À revoir maintenant' : 'Prochaine révision ' + fmtDue(due)}</span>` : ''}</div>`).join('') || '<p class="muted small">Aucune carte ici pour l’instant.</p>'}</div>`, `c-${m.couleur}`);
+  sh.back.querySelector('#revbox')?.addEventListener('click', () => { sh.close(); startSession({ code: m.code, kind: 'normal', ids: its.map((o) => o.it.id) }); });
+}
+
+function leitnerTuto(m) {
+  openSheet(`
+    <div class="between"><h2>La boîte de Leitner</h2><button class="icon-btn" data-close aria-label="Fermer">${ic('close')}</button></div>
+    <p style="margin:0">Chaque carte vit dans l’une de 5 boîtes. Plus elle est haut, plus tu la revois rarement : c’est la <b>répétition espacée</b>.</p>
+    <div class="tuto-boxes">${[1, 2, 3, 4, 5].map((b) => `<div class="tb b${b}"><b>B${b}</b><span>J+${INTERVALS[b]}</span></div>`).join('<span class="tarrow">›</span>')}</div>
+    <ul class="tuto-list">
+      <li><span class="tdot ok">↑</span><span><b>Bonne réponse, le jour prévu :</b> la carte monte d’une boîte et revient plus tard (le lendemain, puis 2, 4, 7 et 16 jours après).</span></li>
+      <li><span class="tdot ko">↺</span><span><b>Erreur :</b> retour en boîte 1, à revoir dès le lendemain. Oublier fait partie de l’apprentissage.</span></li>
+      <li><span class="tdot">≈</span><span><b>Révision en avance</b> (session libre, rafale) : c’est de l’entraînement. Ta journée compte, mais la carte ne monte pas, pour ne pas fausser l’espacement.</span></li>
+      <li><span class="tdot">2×</span><span><b>Carte nouvelle :</b> elle peut monter deux fois le même jour si tu la réussis à nouveau au moins 5 h plus tard.</span></li>
+      <li><span class="tdot">?</span><span><b>« C’était au pif » :</b> la carte reste dans sa boîte.</span></li>
+    </ul>
+    <p class="small muted" style="margin:0">La <b>session du jour</b> te propose uniquement les cartes à revoir aujourd’hui et des nouvelles. Retrouve ce tuto avec « Comment ça marche ? » sur la page d’une matière.</p>
+    <button class="btn primary block" data-close>C’est parti</button>`, m ? `c-${m.couleur}` : 'c-orange');
 }
 
 function openSheet(html, cls = '') {
@@ -545,13 +585,15 @@ function loadSaved() {
   } catch { return null; }
 }
 
-async function startSession({ code, chapitres = null, kind = 'normal' }) {
+async function startSession({ code, chapitres = null, kind = 'normal', ids = null }) {
   const contenu = await S.getContenu(code);
   const prog = await S.getProgres(code);
-  const cfg = kind === 'jour' ? { types: TYPE_KEYS, n: 12, niveau: 'tous', chrono: false } : getCfg(code);
+  const cfg = kind === 'jour' ? { types: TYPE_KEYS, n: 12, niveau: 'tous', chrono: getCfg(code).chrono } : getCfg(code);
   let items = S.flatItems(contenu);
   if (chapitres && chapitres.length) items = items.filter((it) => chapitres.includes(it.chapitre));
-  if (kind === 'erreurs') items = shuffle(items.filter((it) => prog[it.id]?.err));
+  if (ids) items = shuffle(items.filter((it) => ids.includes(it.id)));
+  else if (kind === 'jour') items = prioritize(items.filter((it) => isDue(prog[it.id])), prog).slice(0, 12);
+  else if (kind === 'erreurs') items = shuffle(items.filter((it) => prog[it.id]?.err));
   else {
     items = items.filter((it) => matchCfg(it, cfg));
     if (kind === 'rafale') items = shuffle(items);
@@ -616,7 +658,8 @@ async function viewSession() {
     clearInterval(qTimerId);
     const ns = nextState(pBefore, correct, null);
     await S.recordAnswer(session.code, it.id, ns);
-    session.results.push({ id: it.id, correct, before: pBefore.box || 0, after: ns.box, ...extra });
+    st.ns = ns;
+    session.results.push({ id: it.id, correct, before: pBefore.box || 0, after: ns.box, practice: ns.practice, ...extra });
     if (m.negatif && isChoice) session.score += correct ? 1 : extra.skip || extra.timeout ? 0 : -1;
     else if (correct) session.score += 1;
     saveSession();
@@ -625,7 +668,8 @@ async function viewSession() {
     st.pif = !st.pif;
     const ns = nextState(pBefore, true, st.pif ? 'pif' : null);
     await S.recordAnswer(session.code, it.id, ns, { countDay: false });
-    const r = session.results[session.results.length - 1]; if (r) r.after = ns.box;
+    st.ns = ns;
+    const r = session.results[session.results.length - 1]; if (r) { r.after = ns.box; r.practice = ns.practice; }
     render();
   };
   const advance = () => { clearInterval(qTimerId); session.i++; saveSession(); viewSession(); };
@@ -647,8 +691,17 @@ async function viewSession() {
   const feedback = (extraHtml = '') => {
     if (!st.answered) return '';
     const title = st.timeout ? 'Temps écoulé !' : st.skip ? 'Pas de souci, on la reverra.' : st.correct ? 'Bien joué !' : 'Pas tout à fait.';
-    return `<div class="feedback ${st.correct ? 'ok' : 'ko'}" role="status"><b>${title}</b>${extraHtml}${esc(it.explication || '')}
+    return `<div class="feedback ${st.correct ? 'ok' : 'ko'}" role="status"><b>${title}</b>${extraHtml}${esc(it.explication || '')}${boxNote()}
       ${!st.correct ? ficheLink() : ''}</div>`;
+  };
+  const boxNote = () => {
+    const ns = st.ns; if (!ns) return '';
+    let t;
+    if (!st.correct) t = (pBefore.box || 0) > 1 ? `Retour en boîte 1 : à revoir demain.` : `Boîte 1 : à revoir demain.`;
+    else if (ns.practice) t = `Entraînement : cette carte n’était pas encore à revoir (prochaine révision ${fmtDue(dueDate(ns))}). Sa boîte ne bouge pas.`;
+    else if (ns.box > (pBefore.box || 0)) t = `Monte en boîte ${ns.box} : à revoir ${fmtDue(dueDate(ns))}.`;
+    else t = `Reste en boîte ${ns.box} : à revoir ${fmtDue(dueDate(ns))}.`;
+    return `<span class="boxnote">${esc(t)}</span>`;
   };
   const footer = (canValidate, validateLabel = 'Valider') => st.answered
     ? `${st.correct ? `<button class="flag-btn pif" id="pif" aria-pressed="${st.pif}">${st.pif ? '✓ Noté : c’était au pif' : 'C’était au pif ?'}</button>` : ''}<button class="btn primary block" id="next">Continuer${ic('next')}</button>`
@@ -682,7 +735,7 @@ async function viewSession() {
           st.answered = true; st.correct = true;
           const ns = nextState(pBefore, true, 'pif');
           await S.recordAnswer(session.code, it.id, ns);
-          session.results.push({ id: it.id, correct: true, before: pBefore.box || 0, after: ns.box });
+          session.results.push({ id: it.id, correct: true, before: pBefore.box || 0, after: ns.box, practice: ns.practice });
           session.score += 1; advance();
         };
         bindSwipe(card, async (dir) => { await answer(dir > 0); advance(); });
@@ -839,6 +892,13 @@ async function viewSession() {
     }, 500);
   }
 }
+function fmtDue(t) {
+  const d0 = new Date(today()).getTime();
+  const days = Math.round((t - d0) / 86400000);
+  if (days <= 0) return 'aujourd’hui';
+  if (days === 1) return 'demain';
+  return 'le ' + new Date(t).toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' });
+}
 const fmtTime = (ms) => { const s = Math.max(0, Math.ceil(ms / 1000)); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`; };
 const shortChap = (t) => (t || '').split(' · ')[0];
 
@@ -886,6 +946,7 @@ function viewRecap() {
   setHalo(r.matiere.couleur);
   const n = r.results.length; const ok = r.results.filter((x) => x.correct).length;
   const up = r.results.filter((x) => x.correct && x.after > x.before).length; const down = r.results.filter((x) => x.after < x.before).length;
+  const practice = r.results.filter((x) => x.practice).length;
   const errs = [...new Set(r.results.filter((x) => !x.correct).map((x) => x.id))];
   const titles = { jour: 'Session du jour terminée !', rafale: 'Fin de la rafale !', erreurs: 'Erreurs revues !', normal: 'Session terminée !' };
   const gain = (r.m1 ?? 0) - (r.m0 ?? 0);
@@ -898,6 +959,7 @@ function viewRecap() {
       <div class="stat"><b>${up}</b><span>${up > 1 ? 'montées' : 'montée'} de boîte</span></div>
     </div>
     ${r.m0 !== undefined ? `<div class="chip m">Maîtrise ${esc(r.code)} : ${pct(r.m0)} → ${pct(r.m1)}${gain > 0 ? ` (+${gain})` : ''}</div>` : ''}
+    ${practice ? `<p class="muted small" style="margin:0">${plural(practice, 'carte révisée', 'cartes révisées')} en avance : ${practice > 1 ? 'c’était de l’entraînement, leurs boîtes ne bougent pas' : 'c’était de l’entraînement, sa boîte ne bouge pas'}.</p>` : ''}
     ${r.matiere.negatif ? `<div class="chip m">Score avec points négatifs : ${r.score}</div>` : ''}
     ${down ? `<p class="muted small" style="margin:0">${plural(down, 'question')} ${down > 1 ? 'sont redescendues' : 'est redescendue'} en boîte 1 : ${down > 1 ? 'elles reviendront' : 'elle reviendra'} vite.</p>` : ''}
     <div class="actions" style="width:100%">
@@ -996,6 +1058,7 @@ async function viewProfil() {
       ${flags.length ? `<div class="list">${flags.map((f) => `<div class="between" style="align-items:flex-start"><div><b class="small">${esc(f.matiere)} · ${esc(f.item.id)}</b><div class="small muted">${esc(f.item.recto || f.item.question)}</div>${f.flag.note ? `<div class="small">« ${esc(f.flag.note)} »</div>` : ''}</div><button class="flag-btn" data-unflag="${esc(f.matiere)}|${esc(f.item.id)}">Retirer</button></div>`).join('')}</div>
       <button class="btn plain block" id="copyflags">${ic('copy')}Copier pour Claude</button>` : '<p class="muted small" style="margin:0">Aucun signalement. Pendant une session, touche « Signaler » sous une carte qui te semble fausse.</p>'}
     </div>
+    <button class="card cfg-card" id="tutoP"><span><b>Comment fonctionne la boîte de Leitner ?</b><span class="small muted" style="display:block">Le petit tuto des 5 boîtes</span></span>${ic('next')}</button>
     <div class="card" style="padding:16px;display:flex;flex-direction:column;gap:12px">
       <h2 class="section-title">Mes données</h2>
       <button class="btn plain block" id="export">${ic('download')}Exporter mes données</button>
@@ -1039,6 +1102,7 @@ async function viewProfil() {
     const txt = 'Signalements de mon appli de révisions :\n\n' + flags.map((f) => `- ${f.matiere} · ${f.item.id} · « ${f.item.recto || f.item.question} »${f.flag.note ? ` → ${f.flag.note}` : ''}`).join('\n');
     try { await navigator.clipboard.writeText(txt); toast('Copié ! Colle-le dans ta conversation avec Claude'); } catch { toast('Copie impossible sur cet appareil'); }
   });
+  document.getElementById('tutoP').onclick = () => leitnerTuto(null);
   document.getElementById('export').onclick = async () => {
     const data = await S.exportAll();
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });

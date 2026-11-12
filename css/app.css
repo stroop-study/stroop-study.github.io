@@ -280,3 +280,30 @@ button.ring{cursor:pointer;padding:0}
 
 .btn.okb[disabled],.btn.kob[disabled]{opacity:1}
 .choice[disabled]{opacity:1;color:inherit}
+
+/* ===== Boîtes de Leitner ===== */
+.boxes{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:6px}
+.boxtile{border:none;border-radius:16px;padding:8px 2px;display:flex;flex-direction:column;align-items:center;gap:1px;background:var(--card);box-shadow:var(--shadow);min-height:74px}
+.boxtile .bl{font-size:11px;font-weight:800;color:var(--muted)}
+.boxtile b{font-family:'Outfit',sans-serif;font-size:20px}
+.boxtile .bd{font-size:10px;font-weight:800;color:var(--muted);text-align:center;line-height:1.1}
+.boxtile.b1,.tb.b1{background:color-mix(in srgb, var(--m-acc) 14%, var(--card))}
+.boxtile.b2,.tb.b2{background:color-mix(in srgb, var(--m-acc) 28%, var(--card))}
+.boxtile.b3,.tb.b3{background:color-mix(in srgb, var(--m-acc) 45%, var(--card))}
+.boxtile.b4,.tb.b4{background:color-mix(in srgb, var(--m-acc) 65%, var(--card))}
+.boxtile.b5,.tb.b5{background:var(--m-acc);color:#2A1404}
+.boxtile.b5 .bl,.boxtile.b5 .bd{color:#5a2a08}
+.boxitem{padding:10px 12px;display:flex;flex-direction:column;gap:3px}
+.boxitem .bt{font-weight:700;font-size:14px}
+.boxitem .due{color:var(--m-ink);font-weight:800}
+.boxnote{display:block;margin-top:8px;font-size:13px;opacity:.9}
+.tuto-boxes{display:flex;align-items:center;justify-content:space-between;gap:2px}
+.tb{border-radius:14px;padding:8px 6px;display:flex;flex-direction:column;align-items:center;min-width:46px;box-shadow:var(--shadow)}
+.tb b{font-family:'Outfit',sans-serif}
+.tb span{font-size:11px;font-weight:800}
+.tarrow{color:var(--muted);font-weight:800}
+.tuto-list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:10px}
+.tuto-list li{display:flex;gap:10px;align-items:flex-start;font-size:15px;line-height:1.4}
+.tdot{width:28px;height:28px;border-radius:50%;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:13px;background:var(--ghost)}
+.tdot.ok{background:var(--goodBg);color:var(--good)}
+.tdot.ko{background:var(--badBg);color:var(--bad)}

@@ -1,7 +1,8 @@
 // Boîte de Leitner : 5 boîtes. Boîte 0 = jamais vue.
-// Intervalle (en jours) avant qu'un élément redevienne « à revoir », selon sa boîte.
-export const INTERVALS = { 0: 0, 1: 1, 2: 2, 3: 4, 4: 8, 5: 16 };
+// Délai (en jours) avant qu'une carte redevienne « à revoir », selon sa boîte : J1, J3, J7, J14, J30.
+export const INTERVALS = { 0: 0, 1: 1, 2: 2, 3: 4, 4: 7, 5: 16 };
 export const MAX_BOX = 5;
+export const SAME_DAY_GAP = 5 * 60 * 60 * 1000; // 5 h entre deux montées le même jour (cartes nouvelles)
 
 const DAY = 24 * 60 * 60 * 1000;
 
@@ -14,32 +15,42 @@ export function startOfDay(ts) {
   const d = new Date(ts); d.setHours(0, 0, 0, 0); return d.getTime();
 }
 
-/** Un élément est-il à revoir aujourd'hui ? */
+/** Date (ms, début de journée) à laquelle la carte redevient à revoir. */
+export function dueDate(p) {
+  if (!p || !p.box) return 0;
+  return startOfDay(p.last) + (INTERVALS[p.box] ?? 0) * DAY;
+}
+
+/** Une carte est-elle à revoir aujourd'hui ? (Jamais vue = oui.) */
 export function isDue(p, now = Date.now()) {
-  if (!p || !p.box) return true; // jamais vu
-  const interval = INTERVALS[p.box] ?? 0;
-  return startOfDay(p.last) + interval * DAY <= startOfDay(now);
+  if (!p || !p.box) return true;
+  return dueDate(p) <= startOfDay(now);
 }
 
 /**
- * Nouvel état d'un élément après une réponse.
- * conf : 'sure' | 'hesitante' | 'pif' | null — une bonne réponse « au pif » ne fait pas monter de boîte.
+ * Nouvel état d'une carte après une réponse (méthode de Leitner, version classique).
+ * - Erreur : retour en boîte 1, à revoir le lendemain.
+ * - Bonne réponse sur une carte à revoir (ou jamais vue) : elle monte d'une boîte.
+ * - Exception : une carte nouvelle passée en boîte 1 aujourd'hui peut monter une 2e fois le même jour,
+ *   si au moins 5 h séparent les deux bonnes réponses.
+ * - Bonne réponse en avance : simple entraînement, la boîte et la date ne bougent pas.
+ * - « Au pif » : la carte reste dans sa boîte (sa date est recalculée si elle était à revoir).
+ * Le champ `practice` indique un entraînement sans effet sur la boîte.
  */
 export function nextState(p, correct, conf, now = Date.now()) {
   const box = p?.box || 0;
-  let newBox;
-  if (!correct) newBox = 1;
-  else if (conf === 'pif') newBox = Math.max(box, 1);
-  else newBox = Math.min(MAX_BOX, box + 1);
-  return {
-    box: newBox,
-    last: now,
-    seen: (p?.seen || 0) + 1,
-    ok: (p?.ok || 0) + (correct ? 1 : 0),
-    ko: (p?.ko || 0) + (correct ? 0 : 1),
-    err: !correct,
-    conf: conf || null
-  };
+  const base = { seen: (p?.seen || 0) + 1, ok: (p?.ok || 0) + (correct ? 1 : 0), ko: (p?.ko || 0) + (correct ? 0 : 1), vu: now, conf: conf || null };
+  if (!correct) return { ...base, box: 1, last: now, up: null, err: true, practice: false };
+  const due = isDue(p, now);
+  const secondToday = box === 1 && p?.up && startOfDay(p.up) === startOfDay(now) && p?.newUp && now - p.up >= SAME_DAY_GAP;
+  if (conf === 'pif') {
+    if (box === 0) return { ...base, box: 1, last: now, up: null, err: false, practice: false };
+    if (due) return { ...base, box, last: now, up: p?.up || null, err: false, practice: false };
+    return { ...base, box, last: p.last, up: p?.up || null, err: false, practice: true };
+  }
+  if (box === 0) return { ...base, box: 1, last: now, up: now, newUp: true, err: false, practice: false };
+  if (due || secondToday) return { ...base, box: Math.min(MAX_BOX, box + 1), last: now, up: now, newUp: false, err: false, practice: false };
+  return { ...base, box, last: p.last, up: p?.up || null, newUp: p?.newUp || false, err: false, practice: true };
 }
 
 /**
