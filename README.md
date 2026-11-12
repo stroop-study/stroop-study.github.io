@@ -1,5 +1,7 @@
 # Stroop Study
 
+**Adresse : https://stroop-study.github.io**
+
 Application web de révisions (PWA) pour mes études de psychologie, avec Stroop la loutre.
 
 - **Code** : HTML, CSS et JavaScript, sans outil de build.
