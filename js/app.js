@@ -6,7 +6,7 @@ import {
 import * as S from './store.js';
 import { today, isDue, nextState, mastery, prioritize, shuffle, streak } from './leitner.js';
 
-const VERSION = '1.2.0';
+const VERSION = '1.3.0';
 const $app = document.getElementById('app');
 const $tab = document.getElementById('tabbar');
 const $halos = document.getElementById('halos');
@@ -36,7 +36,7 @@ const IC = {
   copy: '<path d="M9 9h10v10H9zM5 15V5h10"/>'
 };
 const ic = (n, cls = 'ic') => `<svg class="${cls}" viewBox="0 0 24 24" aria-hidden="true">${IC[n]}</svg>`;
-const STROOP = { dodo: 'stroop-dodo', contente: 'stroop-contente', sport: 'stroop-sport', fete: 'stroop-fete' };
+const STROOP = { dodo: 'stroop-dodo', contente: 'stroop-contente', sport: 'stroop-sport', fete: 'stroop-fete', etude: 'stroop-etude' };
 const stroopImg = (mood, cls = '') => `<img class="stroop a-${mood} ${cls}" src="assets/stroop/${STROOP[mood]}.webp" alt="Stroop la loutre" width="176" height="176" data-stroop>`;
 const pct = (n) => `${n} %`;
 const plural = (n, s, p) => `${n} ${n > 1 ? (p || s + 's') : s}`;
@@ -115,7 +115,7 @@ function viewLogin(mode = 'google', err = '') {
     <section class="login">
       <div class="stroop-zone">
         <div class="bubble"><span class="who">Stroop</span>Coucou ! Connecte-toi et on révise ensemble.</div>
-        ${stroopImg('contente')}
+        ${stroopImg('etude')}
       </div>
       <h1>Connexion</h1>
       ${err ? `<p class="feedback ko" role="alert">${esc(err)}</p>` : ''}
@@ -695,7 +695,7 @@ async function viewProgres() {
     }
     cal += '</div>';
   }
-  $app.innerHTML = `<h1>Progrès</h1>
+  $app.innerHTML = `<div class="between"><h1>Progrès</h1><img class="stroop small a-etude" src="assets/stroop/stroop-etude.webp" alt="Stroop studieux" style="width:88px;height:88px"></div>
     <div class="stats">
       <div class="stat"><b>${s}</b><span>série actuelle</span></div>
       <div class="stat"><b>${best}</b><span>record</span></div>
@@ -808,7 +808,7 @@ getRedirectResult(auth).catch((e) => { if (!auth.currentUser) viewLogin('google'
 onAuthStateChanged(auth, async (user) => {
   currentUser = user;
   if (!user) return viewLogin();
-  $app.innerHTML = `<div class="splash">${stroopImg('dodo')}<p>Stroop se réveille…</p></div>`;
+  $app.innerHTML = `<div class="splash">${stroopImg('etude')}<p>Stroop ouvre ses cahiers…</p></div>`;
   try {
     const u = await S.loadUser(user.uid, user.displayName, user.email);
     if (u.theme && !localStorage.getItem('theme')) { localStorage.setItem('theme', u.theme); applyTheme(); }

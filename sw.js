@@ -1,12 +1,12 @@
 // Service worker : met l'appli en cache pour qu'elle s'ouvre même sans réseau.
 // Les données (cartes, progression) sont gérées hors ligne par Firestore, pas ici.
-const VERSION = 'v1.2.0';
+const VERSION = 'v1.3.0';
 const CACHE = `stroop-${VERSION}`;
 const SHELL = [
   './', 'index.html', 'manifest.webmanifest', 'css/app.css',
   'js/app.js', 'js/store.js', 'js/leitner.js', 'js/firebase.js', 'js/firebase-config.js',
   'assets/stroop/stroop-contente.webp', 'assets/stroop/stroop-dodo.webp',
-  'assets/stroop/stroop-fete.webp', 'assets/stroop/stroop-sport.webp',
+  'assets/stroop/stroop-fete.webp', 'assets/stroop/stroop-sport.webp', 'assets/stroop/stroop-etude.webp',
   'assets/icons/icon-192.png', 'assets/icons/apple-touch-icon.png'
 ];
 

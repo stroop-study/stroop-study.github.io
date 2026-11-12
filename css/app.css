@@ -112,8 +112,9 @@ input,textarea,select{font:inherit;color:var(--ink)}
 .a-dodo{animation:floaty 4.5s ease-in-out infinite;transform-origin:50% 60%}
 .a-sport{animation:pump 1.6s ease-in-out infinite;transform-origin:50% 100%}
 .a-fete{animation:bounce 1.4s ease-in-out infinite;transform-origin:50% 100%}
+.a-etude{animation:breathe 3.8s ease-in-out infinite;transform-origin:50% 100%}
 .wiggle{animation:wiggle .5s ease-in-out}
-@media (prefers-reduced-motion:reduce){.a-contente,.a-dodo,.a-sport,.a-fete,.wiggle{animation:none}}
+@media (prefers-reduced-motion:reduce){.a-contente,.a-dodo,.a-sport,.a-fete,.a-etude,.wiggle{animation:none}}
 
 /* ===== Accueil ===== */
 .hello .date{font-size:14px;color:var(--muted);font-weight:700}
