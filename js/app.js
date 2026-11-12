@@ -7,7 +7,7 @@ import * as S from './store.js';
 import { today, isDue, nextState, mastery, seenCount, prioritize, shuffle, streak } from './leitner.js';
 import { TYPES, TYPE_KEYS, NIVEAUX, typeLabel, timeFor, formatOf, checkCourte, sameSet } from './types.js';
 
-const VERSION = '2.0.0';
+const VERSION = '2.0.1';
 const $app = document.getElementById('app');
 const $tab = document.getElementById('tabbar');
 const $halos = document.getElementById('halos');

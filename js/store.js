@@ -71,7 +71,7 @@ export async function loadAcces() {
 export async function loadLibrary() {
   try {
     const snap = await withTimeout(getDocs(collection(db, 'bibliotheque')), 10000);
-    snap.forEach((d) => { state.contenu[d.id] = d.data(); });
+    snap.forEach((d) => { state.contenu[d.id] = decodeContenu(d.data()); });
     state.libOk = true;
   } catch (e) {
     state.libOk = false;
@@ -87,6 +87,15 @@ export async function loadLibrary() {
     await saveUser({ matieres: list });
   }
   return true;
+}
+
+/** Firestore refuse les tableaux imbriqués : les chapitres sont donc stockés en texte JSON. */
+function decodeContenu(d) {
+  if (!d) return null;
+  if (typeof d.chapitresJson === 'string') {
+    try { return { ...d, chapitres: JSON.parse(d.chapitresJson) }; } catch { return null; }
+  }
+  return d;
 }
 
 export async function setMembres(membres) {
@@ -115,7 +124,7 @@ export async function getContenu(code) {
   if (!state.libOk) return null;
   try {
     const snap = await getDoc(contenuRef(code));
-    state.contenu[code] = snap.exists() ? snap.data() : null;
+    state.contenu[code] = snap.exists() ? decodeContenu(snap.data()) : null;
   } catch (e) { state.contenu[code] = null; }
   return state.contenu[code];
 }
@@ -193,7 +202,7 @@ export function validateContenu(data) {
 export async function importContenu(data) {
   const info = validateContenu(data);
   const code = info.code;
-  await setDoc(contenuRef(code), { matiere: data.matiere, chapitres: data.chapitres, version: data.version || 1, importeLe: Date.now() });
+  await setDoc(contenuRef(code), { matiere: data.matiere, chapitresJson: JSON.stringify(data.chapitres), version: data.version || 1, importeLe: Date.now() });
   state.contenu[code] = { matiere: data.matiere, chapitres: data.chapitres };
   // Crée la matière si elle n'existe pas encore (nouveau semestre, nouvelle matière…).
   if (!getMatiere(code)) {
