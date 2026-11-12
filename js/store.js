@@ -128,11 +128,11 @@ export async function getProgres(code) {
 }
 
 /** Enregistre la réponse à un élément et valide la journée. */
-export async function recordAnswer(code, id, newState) {
+export async function recordAnswer(code, id, newState, { countDay = true } = {}) {
   const prog = await getProgres(code);
   prog[id] = { ...(prog[id] || {}), ...newState };
   const j = today();
-  state.user.jours[j] = (state.user.jours[j] || 0) + 1;
+  if (countDay) state.user.jours[j] = (state.user.jours[j] || 0) + 1;
   // Écritures non bloquantes : hors ligne, Firestore les garde et les envoie plus tard.
   setDoc(progresRef(code), { items: { [id]: prog[id] } }, { merge: true }).catch(console.error);
   setDoc(userRef(), { jours: { [j]: state.user.jours[j] } }, { merge: true }).catch(console.error);
@@ -157,6 +157,23 @@ export function flatItems(contenu) {
   return contenu.chapitres.flatMap((c) => c.elements.map((e) => ({ ...e, chapitre: c.id, chapitreTitre: c.titre })));
 }
 
+function checkElement(e) {
+  const bad = (what) => { throw new Error(`${what} : ${e.id}`); };
+  const f = e.type === 'cas' ? (e.format || 'qcu') : e.type;
+  if (e.type === 'cas' && !e.scenario) bad('Cas pratique sans scénario');
+  switch (f) {
+    case 'flashcard': if (!e.recto || !e.verso) bad('Flashcard incomplète'); break;
+    case 'qcu': case 'qcm':
+      if (!e.question || !Array.isArray(e.choix) || !Array.isArray(e.bonnes) || !e.bonnes.length) bad('Question incomplète'); break;
+    case 'vf': if (!(e.affirmation || e.question) || typeof e.vrai !== 'boolean') bad('Vrai/faux incomplet'); break;
+    case 'ordre': if (!Array.isArray(e.items) || e.items.length < 2) bad('Remise en ordre incomplète'); break;
+    case 'assoc': if (!Array.isArray(e.paires) || e.paires.length < 2) bad('Association incomplète'); break;
+    case 'tri': if (!Array.isArray(e.categories) || !Array.isArray(e.items) || !e.items.length) bad('Tri incomplet'); break;
+    case 'courte': if (!e.question || !Array.isArray(e.reponses) || !e.reponses.length) bad('Réponse courte incomplète'); break;
+    default: bad(`Type inconnu (${e.type})`);
+  }
+}
+
 /** Validation et import d'un fichier de contenu. */
 export function validateContenu(data) {
   if (!data || data.format !== 'app-revisions/contenu') throw new Error('Ce fichier n’est pas un fichier de contenu de l’appli.');
@@ -167,10 +184,7 @@ export function validateContenu(data) {
     for (const e of c.elements) {
       if (!e.id || ids.has(e.id)) throw new Error(`Identifiant manquant ou en double : ${e.id || '?'}`);
       ids.add(e.id);
-      if (e.type === 'flashcard') { if (!e.recto || !e.verso) throw new Error(`Flashcard incomplète : ${e.id}`); }
-      else if (e.type === 'qcu' || e.type === 'qcm') {
-        if (!e.question || !Array.isArray(e.choix) || !Array.isArray(e.bonnes) || !e.bonnes.length) throw new Error(`Question incomplète : ${e.id}`);
-      } else throw new Error(`Type inconnu : ${e.type} (${e.id})`);
+      checkElement(e);
     }
   }
   return { code: data.matiere.code, nbChapitres: data.chapitres.length, nbElements: ids.size };

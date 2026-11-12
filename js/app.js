@@ -4,9 +4,10 @@ import {
   sendEmailVerification, signInWithEmailAndPassword, createUserWithEmailAndPassword, sendPasswordResetEmail, signOut
 } from './firebase.js';
 import * as S from './store.js';
-import { today, isDue, nextState, mastery, prioritize, shuffle, streak } from './leitner.js';
+import { today, isDue, nextState, mastery, seenCount, prioritize, shuffle, streak } from './leitner.js';
+import { TYPES, TYPE_KEYS, NIVEAUX, typeLabel, timeFor, formatOf, checkCourte, sameSet } from './types.js';
 
-const VERSION = '1.5.0';
+const VERSION = '2.0.0';
 const $app = document.getElementById('app');
 const $tab = document.getElementById('tabbar');
 const $halos = document.getElementById('halos');
@@ -180,7 +181,7 @@ function authError(e) {
 /* ================= Données dérivées ================= */
 async function matiereStats(m) {
   const contenu = await S.getContenu(m.code);
-  if (!contenu) return { m, contenu: null, total: 0, due: 0, neufs: 0, maitrise: 0, erreurs: 0 };
+  if (!contenu) return { m, contenu: null, total: 0, due: 0, neufs: 0, maitrise: 0, erreurs: 0, vus: 0 };
   const prog = await S.getProgres(m.code);
   const items = S.flatItems(contenu);
   const ids = items.map((i) => i.id);
@@ -190,7 +191,7 @@ async function matiereStats(m) {
     if (!p || !p.box) neufs++; else if (isDue(p)) due++;
     if (p?.err) erreurs++;
   }
-  return { m, contenu, prog, items, total: items.length, due, neufs, maitrise: mastery(ids, prog), erreurs };
+  return { m, contenu, prog, items, total: items.length, due, neufs, maitrise: mastery(ids, prog), erreurs, vus: seenCount(ids, prog) };
 }
 
 function nextExam(m) {
@@ -325,6 +326,27 @@ async function viewMatieres() {
 
 /* ================= Matière ================= */
 const matSel = {}; // sélection de chapitres mémorisée par matière
+const CFG_KEY = (code) => `stroop-cfg-${code}`;
+function getCfg(code) {
+  let c = null;
+  try { c = JSON.parse(localStorage.getItem(CFG_KEY(code)) || 'null'); } catch { c = null; }
+  c = c || {};
+  return {
+    types: Array.isArray(c.types) && c.types.length ? c.types.filter((t) => TYPE_KEYS.includes(t)) : TYPE_KEYS.slice(),
+    n: c.n ?? 20,
+    niveau: c.niveau ?? 'tous',
+    chrono: !!c.chrono
+  };
+}
+const saveCfg = (code, cfg) => localStorage.setItem(CFG_KEY(code), JSON.stringify(cfg));
+const matchCfg = (it, cfg) => cfg.types.includes(it.type) && (cfg.niveau === 'tous' || (it.niveau || 1) === Number(cfg.niveau));
+function cfgSummary(cfg) {
+  const t = cfg.types.length === TYPE_KEYS.length ? 'tous les types' : plural(cfg.types.length, 'type');
+  const n = cfg.n === 'tout' ? 'toutes les questions' : `${cfg.n} questions`;
+  const niv = cfg.niveau === 'tous' ? 'tous niveaux' : NIVEAUX[cfg.niveau].toLowerCase();
+  return `${t} · ${n} · ${niv} · chrono ${cfg.chrono ? 'activé' : 'désactivé'}`;
+}
+
 async function viewMatiere(code) {
   tabbar('#/matieres');
   const m = S.getMatiere(code);
@@ -338,54 +360,133 @@ async function viewMatiere(code) {
     bindExam(m);
     return;
   }
-  const st = matSel[code] || (matSel[code] = { sel: new Set(), mode: 'tout' });
+  const st = matSel[code] || (matSel[code] = { sel: new Set() });
   const chaps = x.contenu.chapitres.slice().sort((a, b) => (a.ordre ?? 0) - (b.ordre ?? 0));
   const render = () => {
-    const filt = (it) => st.mode === 'tout' || (st.mode === 'flash' ? it.type === 'flashcard' : it.type !== 'flashcard');
-    const selItems = x.items.filter((it) => st.sel.has(it.chapitre) && filt(it));
-    const errItems = selItems.filter((it) => x.prog[it.id]?.err);
+    const cfg = getCfg(code);
+    const selItems = x.items.filter((it) => st.sel.has(it.chapitre) && matchCfg(it, cfg));
+    const errItems = x.items.filter((it) => st.sel.has(it.chapitre) && x.prog[it.id]?.err);
     const all = chaps.every((c) => st.sel.has(c.id));
     const ex = nextExam(m);
+    const nb = cfg.n === 'tout' ? selItems.length : Math.min(cfg.n, selItems.length);
     $app.innerHTML = `
     <div class="between">${backBtn()}<button class="icon-btn" id="gear" aria-label="Réglages de la matière">${ic('gear')}</button></div>
     <div class="c-${m.couleur}" style="display:flex;flex-direction:column;gap:16px">
       <div class="mat-head">
         <div style="min-width:0"><div class="code">${esc(m.code)}</div><b>${esc(m.nom)}</b>
-          <div class="small muted">${plural(x.total, 'élément')} · ${plural(x.erreurs, 'erreur')} à revoir${ex ? ` · examen J-${daysUntil(ex.t)}` : ''}</div></div>
-        <div class="ring" role="img" aria-label="Maîtrise ${x.maitrise} %" style="background:conic-gradient(var(--m-acc) 0 ${x.maitrise}%, var(--ghost) ${x.maitrise}% 100%)"><div><b>${pct(x.maitrise)}</b><small>maîtrise</small></div></div>
-      </div>
-      <div class="seg" role="group" aria-label="Type d’exercices">
-        ${[['tout', 'Tout'], ['flash', 'Flashcards'], ['quiz', 'Quiz']].map(([k, l]) => `<button data-mode="${k}" aria-pressed="${st.mode === k}">${l}</button>`).join('')}
+          <div class="small muted">Vu : ${x.vus}/${x.total} · ${plural(x.erreurs, 'erreur')} à revoir${ex ? ` · examen J-${daysUntil(ex.t)}` : ''}</div></div>
+        <button class="ring" id="ringinfo" aria-label="Maîtrise ${x.maitrise} %, comment c’est calculé" style="border:none;background:conic-gradient(var(--m-acc) 0 ${x.maitrise}%, var(--ghost) ${x.maitrise}% 100%)"><div><b>${pct(x.maitrise)}</b><small>maîtrise ⓘ</small></div></button>
       </div>
       <div class="between"><h2 class="section-title">Chapitres à réviser</h2><button class="flag-btn" id="all" style="color:var(--m-ink);font-weight:800">${all ? 'Tout décocher' : 'Tout cocher'}</button></div>
       <div class="list">
         ${chaps.map((c) => {
-          const ids = c.elements.map((e) => e.id); const mm = mastery(ids, x.prog);
-          const due = c.elements.filter((e) => isDue(x.prog[e.id])).length;
-          return `<button class="chap" data-chap="${esc(c.id)}" aria-pressed="${st.sel.has(c.id)}">
-            <span class="box" aria-hidden="true"><svg class="ic" viewBox="0 0 24 24">${IC.check}</svg></span>
-            <span class="info"><span class="between"><span class="name">${esc(c.titre)}</span><span class="small muted">${due}/${ids.length}</span></span>
-            <span class="bar"><span style="width:${mm}%"></span></span></span></button>`;
+          const ids = c.elements.map((e) => e.id); const mm = mastery(ids, x.prog); const vus = seenCount(ids, x.prog);
+          return `<div class="chaprow">
+            <button class="chap" data-chap="${esc(c.id)}" aria-pressed="${st.sel.has(c.id)}">
+              <span class="box" aria-hidden="true"><svg class="ic" viewBox="0 0 24 24">${IC.check}</svg></span>
+              <span class="info"><span class="between"><span class="name">${esc(c.titre)}</span><span class="small muted">${pct(mm)}</span></span>
+              <span class="bar duo"><span class="seen" style="width:${Math.round((vus / ids.length) * 100)}%"></span><span style="width:${mm}%"></span></span></span>
+            </button>
+            ${c.fiche?.length ? `<button class="icon-btn fiche-btn" data-fiche="${esc(c.id)}" aria-label="Fiche de cours : ${esc(c.titre)}">${ic('book')}</button>` : ''}
+          </div>`;
         }).join('')}
       </div>
+      <button class="card cfg-card" id="cfg"><span><b>Réglages de session</b><span class="small muted" style="display:block">${esc(cfgSummary(cfg))}</span></span><span class="flag-btn" style="color:var(--m-ink);font-weight:800">Modifier</span></button>
       <div class="actions">
-        <button class="cta" id="go" ${selItems.length ? '' : 'disabled'}><span><span class="t">Lancer la session</span><span class="s">${st.sel.size ? `${plural(st.sel.size, 'chapitre')} · ${plural(Math.min(20, selItems.length), 'élément')}` : 'Coche au moins un chapitre'}</span></span><span class="go">${ic('arrow')}</span></button>
+        <button class="cta" id="go" ${selItems.length ? '' : 'disabled'}><span><span class="t">Lancer la session</span><span class="s">${st.sel.size ? (selItems.length ? `${plural(st.sel.size, 'chapitre')} · ${plural(nb, 'question')}` : 'Aucune question avec ces réglages') : 'Coche au moins un chapitre'}</span></span><span class="go">${ic('arrow')}</span></button>
         <div class="two">
           <button class="btn soft" id="rafale" ${selItems.length ? '' : 'disabled'}>${ic('bolt')}Rafale 2 min</button>
           <button class="btn plain" id="err" ${errItems.length ? '' : 'disabled'}>${ic('redo')}Mes erreurs · ${errItems.length}</button>
         </div>
       </div>
     </div>`;
-    $app.querySelectorAll('[data-mode]').forEach((b) => b.onclick = () => { st.mode = b.dataset.mode; render(); });
     $app.querySelectorAll('[data-chap]').forEach((b) => b.onclick = () => { const id = b.dataset.chap; st.sel.has(id) ? st.sel.delete(id) : st.sel.add(id); render(); });
+    $app.querySelectorAll('[data-fiche]').forEach((b) => b.onclick = () => ficheSheet(m, chaps.find((c) => c.id === b.dataset.fiche)));
     document.getElementById('all').onclick = () => { if (all) st.sel.clear(); else chaps.forEach((c) => st.sel.add(c.id)); render(); };
-    const opts = { code, chapitres: [...st.sel], mode: st.mode };
+    document.getElementById('ringinfo').onclick = () => masteryInfo(m);
+    document.getElementById('cfg').onclick = () => cfgSheet(m, x, st, render);
+    const opts = { code, chapitres: [...st.sel] };
     document.getElementById('go').onclick = () => startSession({ ...opts, kind: 'normal' });
     document.getElementById('rafale').onclick = () => startSession({ ...opts, kind: 'rafale' });
     document.getElementById('err').onclick = () => startSession({ ...opts, kind: 'erreurs' });
     document.getElementById('gear').onclick = () => matiereSheet(m, render);
   };
   render();
+}
+
+function openSheet(html, cls = '') {
+  const back = document.createElement('div');
+  back.className = 'sheet-back';
+  back.innerHTML = `<div class="sheet ${cls}" role="dialog" aria-modal="true">${html}</div>`;
+  const close = () => back.remove();
+  back.onclick = (e) => { if (e.target === back) close(); };
+  document.body.appendChild(back);
+  back.querySelectorAll('[data-close]').forEach((b) => b.onclick = close);
+  return { back, close };
+}
+
+function cfgSheet(m, x, st, onDone) {
+  const cfg = getCfg(m.code);
+  const pool = x.items.filter((it) => st.sel.size === 0 || st.sel.has(it.chapitre));
+  const draw = () => {
+    const counts = Object.fromEntries(TYPE_KEYS.map((k) => [k, pool.filter((it) => it.type === k && (cfg.niveau === 'tous' || (it.niveau || 1) === Number(cfg.niveau))).length]));
+    const total = pool.filter((it) => matchCfg(it, cfg)).length;
+    sh.back.querySelector('.sheet').innerHTML = `
+      <div class="between"><h2>Réglages de session</h2><button class="icon-btn" data-close aria-label="Fermer">${ic('close')}</button></div>
+      <div class="field">Types de questions
+        <div class="pills">${TYPES.map((t) => `<button class="pill" data-type="${t.key}" aria-pressed="${cfg.types.includes(t.key)}">${esc(t.label)} <span class="muted">${counts[t.key]}</span></button>`).join('')}</div>
+        <div class="row"><button class="flag-btn" id="tall">Tout cocher</button><button class="flag-btn" id="tnone">Tout décocher</button></div>
+      </div>
+      <div class="field">Nombre de questions
+        <div class="seg">${[10, 20, 30, 'tout'].map((n) => `<button data-n="${n}" aria-pressed="${String(cfg.n) === String(n)}">${n === 'tout' ? 'Tout' : n}</button>`).join('')}</div>
+      </div>
+      <div class="field">Difficulté
+        <div class="seg">${[['tous', 'Tous'], ['1', 'Facile'], ['2', 'Moyen'], ['3', 'Difficile']].map(([k, l]) => `<button data-niv="${k}" aria-pressed="${String(cfg.niveau) === k}">${l}</button>`).join('')}</div>
+      </div>
+      <label class="switch"><input type="checkbox" id="chrono" ${cfg.chrono ? 'checked' : ''}><span><b>Chrono</b><span class="small muted" style="display:block">20 s pour une question facile, 40 s pour une moyenne, 1 min pour une difficile. Hors flashcards.</span></span></label>
+      <p class="small muted" style="margin:0">${st.sel.size ? `Dans les chapitres cochés : ${plural(total, 'question disponible', 'questions disponibles')}.` : `Dans toute la matière : ${plural(total, 'question disponible', 'questions disponibles')}. Coche des chapitres pour affiner.`}</p>
+      <button class="btn primary block" data-close>Enregistrer</button>`;
+    const q = (s) => sh.back.querySelectorAll(s);
+    q('[data-type]').forEach((b) => b.onclick = () => {
+      const k = b.dataset.type;
+      cfg.types = cfg.types.includes(k) ? cfg.types.filter((t) => t !== k) : [...cfg.types, k];
+      if (!cfg.types.length) cfg.types = [k];
+      saveCfg(m.code, cfg); draw();
+    });
+    sh.back.querySelector('#tall').onclick = () => { cfg.types = TYPE_KEYS.slice(); saveCfg(m.code, cfg); draw(); };
+    sh.back.querySelector('#tnone').onclick = () => { cfg.types = ['flashcard']; saveCfg(m.code, cfg); draw(); };
+    q('[data-n]').forEach((b) => b.onclick = () => { cfg.n = b.dataset.n === 'tout' ? 'tout' : Number(b.dataset.n); saveCfg(m.code, cfg); draw(); });
+    q('[data-niv]').forEach((b) => b.onclick = () => { cfg.niveau = b.dataset.niv === 'tous' ? 'tous' : Number(b.dataset.niv); saveCfg(m.code, cfg); draw(); });
+    sh.back.querySelector('#chrono').onchange = (e) => { cfg.chrono = e.target.checked; saveCfg(m.code, cfg); };
+    q('[data-close]').forEach((b) => b.onclick = () => { sh.close(); onDone(); });
+  };
+  const sh = openSheet('', `c-${m.couleur}`);
+  sh.back.onclick = (e) => { if (e.target === sh.back) { sh.close(); onDone(); } };
+  draw();
+}
+
+function ficheSheet(m, chap, sectionId) {
+  if (!chap || !chap.fiche) return;
+  const sh = openSheet(`
+    <div class="between"><h2 style="font-size:20px">${esc(chap.titre)}</h2><button class="icon-btn" data-close aria-label="Fermer">${ic('close')}</button></div>
+    ${chap.fiche.map((s) => `<section class="fiche-sec ${s.id === sectionId ? 'hl' : ''}" id="fs-${esc(s.id)}">
+      <h3>${esc(s.titre)}</h3><ul>${s.points.map((p) => `<li>${esc(p)}</li>`).join('')}</ul></section>`).join('')}`, `c-${m.couleur}`);
+  if (sectionId) setTimeout(() => sh.back.querySelector(`#fs-${CSS.escape(sectionId)}`)?.scrollIntoView({ block: 'start', behavior: 'smooth' }), 60);
+}
+
+function masteryInfo(m) {
+  openSheet(`
+    <div class="between"><h2>La maîtrise, comment ça marche ?</h2><button class="icon-btn" data-close aria-label="Fermer">${ic('close')}</button></div>
+    <p style="margin:0">Chaque question vaut de 0 à 100 % selon sa boîte de Leitner :</p>
+    <ul style="margin:0;padding-left:20px;line-height:1.7">
+      <li>jamais vue, ou ratée la dernière fois : <b>0 %</b></li>
+      <li>boîte 1 (réussie une fois) : <b>25 %</b></li>
+      <li>boîte 2 : <b>50 %</b> · boîte 3 : <b>75 %</b></li>
+      <li>boîtes 4 et 5 : <b>100 %</b>, c’est acquis</li>
+    </ul>
+    <p style="margin:0">La maîtrise de la matière est la moyenne de toutes ses questions, <b>y compris celles que tu n’as pas encore vues</b>. Elle grimpe donc doucement au début, puis vite quand tu reviens réussir les mêmes questions, espacées de quelques jours.</p>
+    <p class="muted small" style="margin:0">Sur chaque chapitre, la barre claire montre ce que tu as déjà vu, la barre foncée ce que tu maîtrises.</p>
+    <button class="btn primary block" data-close>Compris</button>`, `c-${m.couleur}`);
 }
 const backBtn = () => `<a class="icon-btn" href="#/matieres" aria-label="Retour">${ic('back')}</a>`;
 
@@ -444,28 +545,32 @@ function loadSaved() {
   } catch { return null; }
 }
 
-async function startSession({ code, chapitres = null, mode = 'tout', kind = 'normal' }) {
+async function startSession({ code, chapitres = null, kind = 'normal' }) {
   const contenu = await S.getContenu(code);
   const prog = await S.getProgres(code);
+  const cfg = kind === 'jour' ? { types: TYPE_KEYS, n: 12, niveau: 'tous', chrono: false } : getCfg(code);
   let items = S.flatItems(contenu);
   if (chapitres && chapitres.length) items = items.filter((it) => chapitres.includes(it.chapitre));
-  if (mode === 'flash') items = items.filter((it) => it.type === 'flashcard');
-  if (mode === 'quiz') items = items.filter((it) => it.type !== 'flashcard');
   if (kind === 'erreurs') items = shuffle(items.filter((it) => prog[it.id]?.err));
-  else if (kind === 'rafale') items = shuffle(items);
-  else items = prioritize(items, prog).slice(0, kind === 'jour' ? 12 : 20);
-  if (!items.length) return toast('Rien à réviser dans cette sélection');
+  else {
+    items = items.filter((it) => matchCfg(it, cfg));
+    if (kind === 'rafale') items = shuffle(items);
+    else items = prioritize(items, prog).slice(0, cfg.n === 'tout' ? items.length : cfg.n);
+  }
+  if (!items.length) return toast('Rien à réviser avec ces réglages');
   clearSaved();
+  const all = S.flatItems(contenu).map((i) => i.id);
   session = {
-    code, kind, ids: items.map((i) => i.id), i: 0, started: Date.now(),
+    code, kind, ids: items.map((i) => i.id), base: items.map((i) => i.id), i: 0, started: Date.now(),
     endsAt: kind === 'rafale' ? Date.now() + 120000 : null,
-    results: [], score: 0, base: items.map((i) => i.id)
+    chrono: !!cfg.chrono && kind !== 'rafale',
+    results: [], score: 0, m0: mastery(all, prog)
   };
   saveSession();
   go('#/session');
 }
 
-let timerId = null;
+let timerId = null, qTimerId = null;
 async function viewSession() {
   noTab();
   if (!session) { const s = loadSaved(); if (s) session = s; else return go('#/'); }
@@ -473,24 +578,57 @@ async function viewSession() {
   const contenu = await S.getContenu(session.code);
   const prog = await S.getProgres(session.code);
   const byId = Object.fromEntries(S.flatItems(contenu).map((it) => [it.id, it]));
-  clearInterval(timerId);
+  const chapById = Object.fromEntries(contenu.chapitres.map((c) => [c.id, c]));
+  clearInterval(timerId); clearInterval(qTimerId);
 
   const finish = () => {
-    clearInterval(timerId); clearSaved();
-    lastRecap = { ...session, matiere: m };
+    clearInterval(timerId); clearInterval(qTimerId); clearSaved();
+    lastRecap = { ...session, matiere: m, m1: mastery(Object.keys(byId), prog) };
     session = null; go('#/recap');
   };
   if (session.kind === 'rafale' && Date.now() >= session.endsAt) return finish();
   if (session.i >= session.ids.length) {
-    if (session.kind === 'rafale') { session.ids = session.ids.concat(shuffle(session.base || session.ids)); }
+    if (session.kind === 'rafale') session.ids = session.ids.concat(shuffle(session.base || session.ids));
     else return finish();
   }
   const it = byId[session.ids[session.i]];
   if (!it) { session.i++; return viewSession(); }
-  const p = prog[it.id] || {};
+  const pBefore = { ...(prog[it.id] || {}) };
+  const fmt = formatOf(it);
   const total = session.kind === 'rafale' ? null : session.ids.length;
   const progress = total ? Math.round((session.i / total) * 100) : Math.round(((120000 - (session.endsAt - Date.now())) / 120000) * 100);
-  const st = { flipped: false, conf: null, picked: new Set(), answered: false };
+  const timed = session.chrono && it.type !== 'flashcard';
+  const st = {
+    flipped: false, answered: false, correct: null, pif: false, skip: false, timeout: false,
+    picked: new Set(), text: '',
+    perm: shuffle((it.choix || []).map((_, i) => i)),
+    order: null, pairs: {}, selLeft: null, rightPerm: null, triPick: {}, triPerm: null,
+    deadline: timed ? Date.now() + timeFor(it) * 1000 : null
+  };
+  if (fmt === 'ordre') { do { st.order = shuffle(it.items.map((_, i) => i)); } while (it.items.length > 1 && st.order.every((v, i) => v === i)); }
+  if (fmt === 'assoc') st.rightPerm = shuffle(it.paires.map((_, i) => i));
+  if (fmt === 'tri') st.triPerm = shuffle(it.items.map((_, i) => i));
+
+  const isChoice = fmt === 'qcu' || fmt === 'qcm';
+  const answer = async (correct, extra = {}) => {
+    if (st.answered) return;
+    st.answered = true; st.correct = correct;
+    clearInterval(qTimerId);
+    const ns = nextState(pBefore, correct, null);
+    await S.recordAnswer(session.code, it.id, ns);
+    session.results.push({ id: it.id, correct, before: pBefore.box || 0, after: ns.box, ...extra });
+    if (m.negatif && isChoice) session.score += correct ? 1 : extra.skip || extra.timeout ? 0 : -1;
+    else if (correct) session.score += 1;
+    saveSession();
+  };
+  const togglePif = async () => {
+    st.pif = !st.pif;
+    const ns = nextState(pBefore, true, st.pif ? 'pif' : null);
+    await S.recordAnswer(session.code, it.id, ns, { countDay: false });
+    const r = session.results[session.results.length - 1]; if (r) r.after = ns.box;
+    render();
+  };
+  const advance = () => { clearInterval(qTimerId); session.i++; saveSession(); viewSession(); };
 
   const head = () => `
     <div class="sess-top">
@@ -498,25 +636,29 @@ async function viewSession() {
       <span class="bar"><span id="pbar" style="width:${progress}%"></span></span>
       <span class="timer" id="tim">${total ? `${session.i + 1} / ${total}` : fmtTime(session.endsAt - Date.now())}</span>
     </div>
-    <div class="row" style="flex-wrap:wrap"><span class="chip m">${esc(m.code)} · ${esc(shortChap(it.chapitreTitre))}</span><span class="chip">${p.box ? 'Boîte ' + p.box : 'Nouveau'}</span>${session.kind === 'rafale' ? `<span class="chip">${ic('bolt')} ${session.results.length} réponses</span>` : ''}</div>`;
+    <div class="row" style="flex-wrap:wrap"><span class="chip m">${esc(m.code)} · ${esc(shortChap(it.chapitreTitre))}</span><span class="chip">${esc(typeLabel(it.type))}</span><span class="chip">${pBefore.box ? 'Boîte ' + pBefore.box : 'Nouveau'}</span>${session.kind === 'rafale' ? `<span class="chip">${ic('bolt')} ${session.results.length}</span>` : ''}</div>
+    ${timed && !st.answered ? `<div class="qtimer" aria-hidden="true"><span id="qbar"></span></div>` : ''}`;
 
-  const confRow = () => `<div class="conf" role="group" aria-label="Ma confiance">${[['sure', 'Sûr·e'], ['hesitante', 'Hésitant·e'], ['pif', 'Au pif']].map(([k, l]) => `<button data-conf="${k}" aria-pressed="${st.conf === k}">${l}</button>`).join('')}</div>`;
-
-  const answer = async (correct, extra = {}) => {
-    if (st.answered && it.type === 'flashcard') return;
-    st.answered = true;
-    const before = p.box || 0;
-    const ns = nextState(p, correct, st.conf);
-    await S.recordAnswer(session.code, it.id, ns);
-    session.results.push({ id: it.id, correct, before, after: ns.box, ...extra });
-    if (m.negatif && it.type !== 'flashcard') session.score += correct ? 1 : extra.skip ? 0 : -1;
-    else if (correct) session.score += 1;
+  const ficheLink = () => {
+    const chap = chapById[it.chapitre];
+    const sec = chap?.fiche?.find((s) => s.id === it.section);
+    return sec ? `<button class="flag-btn fiche-link" id="fiche">${ic('book')}Revoir le cours : ${esc(sec.titre)}</button>` : '';
   };
-  const advance = () => { session.i++; saveSession(); viewSession(); };
+  const feedback = (extraHtml = '') => {
+    if (!st.answered) return '';
+    const title = st.timeout ? 'Temps écoulé !' : st.skip ? 'Pas de souci, on la reverra.' : st.correct ? 'Bien joué !' : 'Pas tout à fait.';
+    return `<div class="feedback ${st.correct ? 'ok' : 'ko'}" role="status"><b>${title}</b>${extraHtml}${esc(it.explication || '')}
+      ${!st.correct ? ficheLink() : ''}</div>`;
+  };
+  const footer = (canValidate, validateLabel = 'Valider') => st.answered
+    ? `${st.correct ? `<button class="flag-btn pif" id="pif" aria-pressed="${st.pif}">${st.pif ? '✓ Noté : c’était au pif' : 'C’était au pif ?'}</button>` : ''}<button class="btn primary block" id="next">Continuer${ic('next')}</button>`
+    : `<div class="two"><button class="btn plain" id="skip">Je ne sais pas</button><button class="btn primary" id="val" ${canValidate ? '' : 'disabled'}>${validateLabel}</button></div>`;
+  const scenario = () => it.type === 'cas' ? `<div class="scenario"><span class="lab">Cas pratique</span><p>${esc(it.scenario)}</p></div>` : '';
+  const flag = () => `<button class="flag-btn" id="flag">${ic('flag')}Signaler</button>`;
 
   const render = () => {
-    const flag = `<button class="flag-btn" id="flag">${ic('flag')}Signaler cette ${it.type === 'flashcard' ? 'carte' : 'question'}</button>`;
-    if (it.type === 'flashcard') {
+    let body = '', foot = '';
+    if (fmt === 'flashcard') {
       $app.innerHTML = `<div class="c-${m.couleur}" style="display:flex;flex-direction:column;gap:16px;flex:1">
         ${head()}
         <div class="stage"><span class="ghost-card" aria-hidden="true"></span>
@@ -527,62 +669,166 @@ async function viewSession() {
             <span class="hint">${ic('flip')}${st.flipped ? 'Glisse à droite si tu savais, à gauche sinon' : 'Touche pour retourner'}</span>
           </button>
         </div>
-        ${st.flipped ? `<div class="small muted" style="text-align:center;margin-bottom:-6px">Tu étais…</div>${confRow()}
-        <div class="two"><button class="btn no" id="no">${ic('back')}À revoir</button><button class="btn primary" id="yes">Je sais${ic('next')}</button></div>` : '<div style="height:8px"></div>'}
-        ${flag}
+        ${st.flipped ? `<div class="two"><button class="btn no" id="no">${ic('back')}À revoir</button><button class="btn primary" id="yes">Je sais${ic('next')}</button></div>
+        <button class="flag-btn" id="half" style="align-self:center">Je savais à moitié</button>` : '<div style="height:8px"></div>'}
+        <div class="between">${flag()}${st.flipped ? ficheLink() : ''}</div>
       </div>`;
       const card = document.getElementById('card');
       card.onclick = () => { if (card.dataset.dragged) { delete card.dataset.dragged; return; } st.flipped = !st.flipped; render(); };
       if (st.flipped) {
         document.getElementById('no').onclick = async () => { await answer(false); advance(); };
         document.getElementById('yes').onclick = async () => { await answer(true); advance(); };
+        document.getElementById('half').onclick = async () => {
+          st.answered = true; st.correct = true;
+          const ns = nextState(pBefore, true, 'pif');
+          await S.recordAnswer(session.code, it.id, ns);
+          session.results.push({ id: it.id, correct: true, before: pBefore.box || 0, after: ns.box });
+          session.score += 1; advance();
+        };
         bindSwipe(card, async (dir) => { await answer(dir > 0); advance(); });
       }
-    } else {
-      const multi = it.type === 'qcm';
-      const good = new Set(it.bonnes);
-      const correct = st.answered ? (st.picked.size === good.size && [...st.picked].every((i) => good.has(i))) : null;
-      $app.innerHTML = `<div class="c-${m.couleur}" style="display:flex;flex-direction:column;gap:14px;flex:1">
-        ${head()}
-        <div class="q">
-          <span class="small muted">${multi ? 'QCM · plusieurs bonnes réponses possibles' : 'QCU · une seule bonne réponse'}${m.negatif ? ' · points négatifs' : ''}</span>
-          <h2 class="qt">${esc(it.question)}</h2>
-          <div class="list">${it.choix.map((c, i) => {
-            let cls = ''; const on = st.picked.has(i);
-            if (st.answered) { if (good.has(i)) cls = 'ok'; else if (on) cls = 'ko'; }
-            return `<button class="choice ${cls}" data-i="${i}" aria-pressed="${on}" ${st.answered ? 'disabled' : ''}><span class="mk ${multi ? 's' : 'r'}">${on || (st.answered && good.has(i)) ? `<svg class="ic" viewBox="0 0 24 24">${IC.check}</svg>` : ''}</span><span>${esc(c)}</span></button>`;
-          }).join('')}</div>
-          ${st.answered ? `<div class="feedback ${correct ? 'ok' : 'ko'}" role="status"><b>${st.skip ? 'Pas de souci, on la reverra.' : correct ? 'Bien joué !' : 'Pas tout à fait.'}</b>${esc(it.explication || '')}</div>` : ''}
-        </div>
-        <div style="flex:1"></div>
-        ${st.answered ? `<button class="btn primary block" id="next">Continuer${ic('next')}</button>` : `${confRow()}
-        <div class="two"><button class="btn plain" id="skip">Je ne sais pas</button><button class="btn primary" id="val" ${st.picked.size ? '' : 'disabled'}>Valider</button></div>`}
-        ${flag}
-      </div>`;
-      $app.querySelectorAll('[data-i]').forEach((b) => b.onclick = () => {
-        const i = Number(b.dataset.i);
-        if (multi) { st.picked.has(i) ? st.picked.delete(i) : st.picked.add(i); } else { st.picked = new Set([i]); }
-        render();
-      });
-      if (!st.answered) {
-        document.getElementById('val').onclick = async () => {
-          const ok = st.picked.size === good.size && [...st.picked].every((i) => good.has(i));
-          await answer(ok); render();
-        };
-        document.getElementById('skip').onclick = async () => { st.skip = true; await answer(false, { skip: true }); render(); };
-      } else document.getElementById('next').onclick = advance;
+      bindCommon();
+      return;
     }
-    $app.querySelectorAll('[data-conf]').forEach((b) => b.onclick = () => { st.conf = st.conf === b.dataset.conf ? null : b.dataset.conf; render(); });
+
+    const qText = esc(it.question || it.affirmation || '');
+    if (isChoice) {
+      const multi = fmt === 'qcm';
+      const good = new Set(it.bonnes);
+      body = `<div class="qkind ${multi ? 'multi' : 'single'}">${multi ? '<span class="qk-ic">☑︎</span><span><b>QCM</b> · plusieurs réponses possibles, coche toutes les bonnes</span>' : '<span class="qk-ic">◉</span><span><b>QCU</b> · une seule bonne réponse</span>'}${m.negatif ? '<span class="neg">points négatifs</span>' : ''}</div>
+        <h2 class="qt">${qText}</h2>
+        <div class="list">${st.perm.map((i) => {
+          const on = st.picked.has(i); let cls = '';
+          if (st.answered) { if (good.has(i)) cls = 'ok'; else if (on) cls = 'ko'; }
+          return `<button class="choice ${cls}" data-i="${i}" aria-pressed="${on}" ${st.answered ? 'disabled' : ''}><span class="mk ${multi ? 's' : 'r'}">${on || (st.answered && good.has(i)) ? `<svg class="ic" viewBox="0 0 24 24">${IC.check}</svg>` : ''}</span><span>${esc(it.choix[i])}</span></button>`;
+        }).join('')}</div>`;
+      foot = footer(st.picked.size > 0);
+    } else if (fmt === 'vf') {
+      body = `<h2 class="qt">${qText}</h2>
+        <div class="two">${[[true, 'Vrai'], [false, 'Faux']].map(([v, l]) => {
+          let cls = 'plain';
+          if (st.answered) cls = v === it.vrai ? 'okb' : (st.pickedVf === v ? 'kob' : 'plain');
+          return `<button class="btn ${cls} vf" data-vf="${v}" ${st.answered ? 'disabled' : ''}>${l}</button>`;
+        }).join('')}</div>`;
+      foot = st.answered ? footer(true) : `<button class="flag-btn" id="skip" style="align-self:center">Je ne sais pas</button>`;
+    } else if (fmt === 'ordre') {
+      body = `<h2 class="qt">${qText}</h2><p class="small muted" style="margin:0">Utilise les flèches pour remettre les éléments dans l’ordre.</p>
+        <ol class="olist">${st.order.map((idx, pos) => {
+          const cls = st.answered ? (idx === pos ? 'ok' : 'ko') : '';
+          return `<li class="oitem ${cls}"><span class="onum">${pos + 1}</span><span class="otxt">${esc(it.items[idx])}</span>
+            ${st.answered ? '' : `<span class="oarrows"><button class="icon-btn sm" data-up="${pos}" aria-label="Monter" ${pos === 0 ? 'disabled' : ''}><svg class="ic" viewBox="0 0 24 24"><path d="M6 15l6-6 6 6"/></svg></button><button class="icon-btn sm" data-down="${pos}" aria-label="Descendre" ${pos === st.order.length - 1 ? 'disabled' : ''}><svg class="ic" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></button></span>`}</li>`;
+        }).join('')}</ol>
+        ${st.answered && !st.correct ? `<div class="card" style="padding:12px"><b class="small">Le bon ordre</b><ol class="small" style="margin:6px 0 0;padding-left:20px">${it.items.map((t) => `<li>${esc(t)}</li>`).join('')}</ol></div>` : ''}`;
+      foot = footer(true);
+    } else if (fmt === 'assoc') {
+      const colors = ['#FF9A52', '#5F98EC', '#58BF82', '#9C7DEB', '#EE79A9', '#EBC03F', '#4FC3C7', '#B08968'];
+      const rightToLeft = Object.fromEntries(Object.entries(st.pairs).map(([l, r]) => [r, l]));
+      body = `<h2 class="qt">${qText}</h2><p class="small muted" style="margin:0">Touche un élément à gauche, puis son partenaire à droite.</p>
+        <div class="assoc">
+          <div class="list">${it.paires.map((p, l) => {
+            const r = st.pairs[l]; const paired = r !== undefined;
+            const ok = st.answered ? Number(r) === l : null;
+            return `<button class="aitem ${st.selLeft === l ? 'sel' : ''} ${ok === true ? 'ok' : ok === false ? 'ko' : ''}" data-left="${l}" ${st.answered ? 'disabled' : ''}>${paired ? `<span class="adot" style="background:${colors[l % colors.length]}">${l + 1}</span>` : ''}${esc(p[0])}</button>`;
+          }).join('')}</div>
+          <div class="list">${st.rightPerm.map((r) => {
+            const l = rightToLeft[r];
+            return `<button class="aitem right" data-right="${r}" ${st.answered ? 'disabled' : ''}>${l !== undefined ? `<span class="adot" style="background:${colors[l % colors.length]}">${Number(l) + 1}</span>` : ''}${esc(it.paires[r][1])}</button>`;
+          }).join('')}</div>
+        </div>
+        ${st.answered && !st.correct ? `<div class="card" style="padding:12px"><b class="small">Les bonnes paires</b><ul class="small" style="margin:6px 0 0;padding-left:18px">${it.paires.map((p) => `<li>${esc(p[0])} → ${esc(p[1])}</li>`).join('')}</ul></div>` : ''}`;
+      foot = footer(Object.keys(st.pairs).length === it.paires.length);
+    } else if (fmt === 'tri') {
+      body = `<h2 class="qt">${qText}</h2>
+        <div class="list">${st.triPerm.map((idx) => {
+          const [txt, cat] = it.items[idx]; const pick = st.triPick[idx];
+          const cls = st.answered ? (pick === cat ? 'ok' : 'ko') : '';
+          return `<div class="titem ${cls}"><span class="ttxt">${esc(txt)}</span>
+            <div class="seg tseg">${it.categories.map((c, ci) => `<button data-tri="${idx}" data-cat="${ci}" aria-pressed="${pick === ci}" ${st.answered ? 'disabled' : ''}>${esc(c)}</button>`).join('')}</div>
+            ${st.answered && pick !== cat ? `<span class="small" style="font-weight:800">→ ${esc(it.categories[cat])}</span>` : ''}</div>`;
+        }).join('')}</div>`;
+      foot = footer(Object.keys(st.triPick).length === it.items.length);
+    } else if (fmt === 'courte') {
+      body = `<h2 class="qt">${qText}</h2>
+        <label class="field"><span class="sr">Ta réponse</span><input id="rep" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="Ta réponse…" value="${esc(st.text)}" ${st.answered ? 'disabled' : ''} enterkeyhint="done"></label>
+        ${st.answered && !st.correct ? `<div class="small" style="font-weight:800">Réponse attendue : ${esc(it.reponses[0])}</div>` : ''}`;
+      foot = footer(true);
+    }
+    $app.innerHTML = `<div class="c-${m.couleur}" style="display:flex;flex-direction:column;gap:14px;flex:1">
+      ${head()}${scenario()}<div class="q">${body}${feedback()}</div><div style="flex:1"></div>${foot}${flag()}</div>`;
+
+    // Interactions
+    $app.querySelectorAll('[data-i]').forEach((b) => b.onclick = () => {
+      const i = Number(b.dataset.i);
+      if (fmt === 'qcm') { st.picked.has(i) ? st.picked.delete(i) : st.picked.add(i); } else { st.picked = new Set([i]); }
+      render();
+    });
+    $app.querySelectorAll('[data-vf]').forEach((b) => b.onclick = async () => { st.pickedVf = b.dataset.vf === 'true'; await answer(st.pickedVf === it.vrai); render(); });
+    $app.querySelectorAll('[data-up]').forEach((b) => b.onclick = () => { const p = Number(b.dataset.up); [st.order[p - 1], st.order[p]] = [st.order[p], st.order[p - 1]]; render(); });
+    $app.querySelectorAll('[data-down]').forEach((b) => b.onclick = () => { const p = Number(b.dataset.down); [st.order[p + 1], st.order[p]] = [st.order[p], st.order[p + 1]]; render(); });
+    $app.querySelectorAll('[data-left]').forEach((b) => b.onclick = () => {
+      const l = Number(b.dataset.left);
+      if (st.pairs[l] !== undefined) delete st.pairs[l];
+      st.selLeft = l;
+      render();
+    });
+    $app.querySelectorAll('[data-right]').forEach((b) => b.onclick = () => {
+      const r = Number(b.dataset.right);
+      if (st.selLeft === null) {
+        const l = Object.keys(st.pairs).find((k) => st.pairs[k] === r);
+        if (l !== undefined) { delete st.pairs[l]; render(); }
+        return;
+      }
+      for (const k of Object.keys(st.pairs)) if (st.pairs[k] === r) delete st.pairs[k];
+      st.pairs[st.selLeft] = r; st.selLeft = null;
+      const next = it.paires.findIndex((_, i) => st.pairs[i] === undefined); st.selLeft = next >= 0 ? next : null;
+      render();
+    });
+    $app.querySelectorAll('[data-tri]').forEach((b) => b.onclick = () => { st.triPick[Number(b.dataset.tri)] = Number(b.dataset.cat); render(); });
+    const rep = document.getElementById('rep');
+    if (rep && !st.answered) {
+      rep.oninput = () => { st.text = rep.value; };
+      rep.onkeydown = (e) => { if (e.key === 'Enter') { e.preventDefault(); document.getElementById('val')?.click(); } };
+      setTimeout(() => rep.focus(), 30);
+    }
+    const val = document.getElementById('val');
+    if (val) val.onclick = async () => {
+      let ok = false;
+      if (isChoice) ok = sameSet([...st.picked], it.bonnes);
+      else if (fmt === 'ordre') ok = st.order.every((v, i) => v === i);
+      else if (fmt === 'assoc') ok = it.paires.every((_, l) => Number(st.pairs[l]) === l);
+      else if (fmt === 'tri') ok = it.items.every(([, cat], idx) => st.triPick[idx] === cat);
+      else if (fmt === 'courte') { st.text = document.getElementById('rep')?.value || st.text; ok = checkCourte(st.text, it.reponses); }
+      await answer(ok); render();
+    };
+    document.getElementById('skip')?.addEventListener('click', async () => { st.skip = true; await answer(false, { skip: true }); render(); });
+    document.getElementById('next')?.addEventListener('click', advance);
+    document.getElementById('pif')?.addEventListener('click', togglePif);
+    bindCommon();
+  };
+
+  function bindCommon() {
     document.getElementById('quit').onclick = () => {
-      clearInterval(timerId);
+      clearInterval(timerId); clearInterval(qTimerId);
       if (session.results.length && session.kind !== 'rafale') { saveSession(); toast('Session gardée : tu pourras la reprendre'); }
       else if (!session.results.length) clearSaved();
       if (session.kind === 'rafale' && session.results.length) return finish();
       session = null; go('#/');
     };
     document.getElementById('flag').onclick = () => flagSheet(session.code, it);
-  };
+    document.getElementById('fiche')?.addEventListener('click', () => ficheSheet(m, chapById[it.chapitre], it.section));
+  }
+
   render();
+  if (timed) {
+    const totalMs = timeFor(it) * 1000;
+    qTimerId = setInterval(async () => {
+      if (st.answered) return clearInterval(qTimerId);
+      const left = st.deadline - Date.now();
+      const b = document.getElementById('qbar');
+      if (b) { b.style.width = Math.max(0, (left / totalMs) * 100) + '%'; b.classList.toggle('late', left < 5000); }
+      if (left <= 0) { clearInterval(qTimerId); st.timeout = true; await answer(false, { timeout: true }); render(); }
+    }, 200);
+  }
   if (session.kind === 'rafale') {
     timerId = setInterval(() => {
       const left = session.endsAt - Date.now();
@@ -622,18 +868,15 @@ function bindSwipe(card, onSwipe) {
 }
 
 function flagSheet(code, it) {
-  const back = document.createElement('div'); back.className = 'sheet-back';
-  back.innerHTML = `<div class="sheet" role="dialog" aria-modal="true" aria-label="Signaler">
+  const label = it.recto || it.question || it.affirmation || it.scenario || '';
+  const sh = openSheet(`
     <div class="between"><h2>Signaler</h2><button class="icon-btn" data-close aria-label="Fermer">${ic('close')}</button></div>
-    <p class="muted small" style="margin:0">${esc(it.recto || it.question)}</p>
-    <label class="field">Qu’est-ce qui ne va pas ?<textarea id="note" rows="3" placeholder="ex. définition incomplète, mauvaise réponse, formulation ambiguë…"></textarea></label>
+    <p class="muted small" style="margin:0">${esc(label)}</p>
+    <label class="field">Qu’est-ce qui ne va pas ?<textarea id="note" rows="3" placeholder="ex. réponse fausse, question pas claire, manque de contexte…"></textarea></label>
     <button class="btn primary block" id="send">Signaler</button>
-    <p class="muted small" style="margin:0">Retrouve tes signalements dans Profil, pour les transmettre à Claude.</p></div>`;
-  const close = () => back.remove();
-  back.onclick = (e) => { if (e.target === back) close(); };
-  back.querySelector('[data-close]').onclick = close;
-  back.querySelector('#send').onclick = async () => { await S.flagItem(code, it.id, back.querySelector('#note').value.trim()); close(); toast('Merci, c’est noté !'); };
-  document.body.appendChild(back); back.querySelector('#note').focus();
+    <p class="muted small" style="margin:0">Retrouve tes signalements dans Profil, pour les transmettre à Claude.</p>`);
+  sh.back.querySelector('#send').onclick = async () => { await S.flagItem(code, it.id, sh.back.querySelector('#note').value.trim()); sh.close(); toast('Merci, c’est noté !'); };
+  sh.back.querySelector('#note').focus();
 }
 
 /* ================= Récap ================= */
@@ -645,6 +888,7 @@ function viewRecap() {
   const up = r.results.filter((x) => x.correct && x.after > x.before).length; const down = r.results.filter((x) => x.after < x.before).length;
   const errs = [...new Set(r.results.filter((x) => !x.correct).map((x) => x.id))];
   const titles = { jour: 'Session du jour terminée !', rafale: 'Fin de la rafale !', erreurs: 'Erreurs revues !', normal: 'Session terminée !' };
+  const gain = (r.m1 ?? 0) - (r.m0 ?? 0);
   $app.innerHTML = `<section class="recap c-${r.matiere.couleur}">
     <div class="stroop-zone"><div class="bubble"><span class="who">Stroop</span>${n ? (ok / n >= 0.8 ? 'Wahou, quelle forme ! Je fais la fête.' : ok / n >= 0.5 ? 'Beau travail, ça rentre !' : 'Chaque erreur d’aujourd’hui, c’est une réussite de demain.') : 'On se refait ça bientôt ?'}</div>${stroopImg('fete')}</div>
     <h1>${titles[r.kind] || titles.normal}</h1>
@@ -653,8 +897,9 @@ function viewRecap() {
       <div class="stat"><b>${n ? pct(Math.round((ok / n) * 100)) : '–'}</b><span>réussite</span></div>
       <div class="stat"><b>${up}</b><span>${up > 1 ? 'montées' : 'montée'} de boîte</span></div>
     </div>
+    ${r.m0 !== undefined ? `<div class="chip m">Maîtrise ${esc(r.code)} : ${pct(r.m0)} → ${pct(r.m1)}${gain > 0 ? ` (+${gain})` : ''}</div>` : ''}
     ${r.matiere.negatif ? `<div class="chip m">Score avec points négatifs : ${r.score}</div>` : ''}
-    ${down ? `<p class="muted small" style="margin:0">${plural(down, 'élément')} ${down > 1 ? 'sont redescendus' : 'est redescendu'} en boîte 1 : ${down > 1 ? 'ils reviendront' : 'il reviendra'} vite.</p>` : ''}
+    ${down ? `<p class="muted small" style="margin:0">${plural(down, 'question')} ${down > 1 ? 'sont redescendues' : 'est redescendue'} en boîte 1 : ${down > 1 ? 'elles reviendront' : 'elle reviendra'} vite.</p>` : ''}
     <div class="actions" style="width:100%">
       ${errs.length ? `<button class="btn soft block" id="again">${ic('redo')}Revoir mes ${plural(errs.length, 'erreur')}</button>` : ''}
       <a class="btn primary block" href="#/matiere/${encodeURIComponent(r.code)}">Retour à ${esc(r.code)}</a>
@@ -662,7 +907,7 @@ function viewRecap() {
     </div></section>`;
   document.getElementById('again')?.addEventListener('click', () => {
     clearSaved();
-    session = { code: r.code, kind: 'erreurs', ids: shuffle(errs), i: 0, started: Date.now(), endsAt: null, results: [], score: 0 };
+    session = { code: r.code, kind: 'erreurs', ids: shuffle(errs), base: errs, i: 0, started: Date.now(), endsAt: null, chrono: false, results: [], score: 0, m0: r.m1 };
     saveSession(); go('#/session');
   });
 }

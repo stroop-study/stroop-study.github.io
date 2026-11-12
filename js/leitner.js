@@ -42,11 +42,25 @@ export function nextState(p, correct, conf, now = Date.now()) {
   };
 }
 
+/**
+ * Maîtrise d'un élément (0 à 1) : 0 s'il n'a jamais été vu ou si la dernière réponse était fausse,
+ * puis 25 % en boîte 1, 50 % en boîte 2, 75 % en boîte 3, 100 % en boîtes 4 et 5.
+ */
+export function itemMastery(p) {
+  if (!p || !p.box || p.err) return 0;
+  return Math.min(1, p.box / 4);
+}
+
 /** Maîtrise d'un ensemble d'éléments, en %. */
 export function mastery(ids, prog) {
   if (!ids.length) return 0;
-  const sum = ids.reduce((s, id) => s + (prog[id]?.box || 0), 0);
-  return Math.round((sum / (ids.length * MAX_BOX)) * 100);
+  const sum = ids.reduce((s, id) => s + itemMastery(prog[id]), 0);
+  return Math.round((sum / ids.length) * 100);
+}
+
+/** Nombre d'éléments déjà vus au moins une fois. */
+export function seenCount(ids, prog) {
+  return ids.filter((id) => prog[id]?.seen).length;
 }
 
 /**
