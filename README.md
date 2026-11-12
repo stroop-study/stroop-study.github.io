@@ -1,4 +1,4 @@
-# Stroop · Révisions
+# Stroop Study
 
 Application web de révisions (PWA) pour mes études de psychologie, avec Stroop la loutre.
 

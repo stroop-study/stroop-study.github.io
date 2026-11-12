@@ -1,4 +1,4 @@
-// Stroop · Révisions — application principale (routeur + écrans).
+// Stroop Study — application principale (routeur + écrans).
 import {
   auth, onAuthStateChanged, GoogleAuthProvider, signInWithPopup, signInWithRedirect, getRedirectResult,
   sendEmailVerification, signInWithEmailAndPassword, createUserWithEmailAndPassword, sendPasswordResetEmail, signOut
@@ -6,7 +6,7 @@ import {
 import * as S from './store.js';
 import { today, isDue, nextState, mastery, prioritize, shuffle, streak } from './leitner.js';
 
-const VERSION = '1.3.0';
+const VERSION = '1.4.0';
 const $app = document.getElementById('app');
 const $tab = document.getElementById('tabbar');
 const $halos = document.getElementById('halos');
@@ -117,7 +117,7 @@ function viewLogin(mode = 'google', err = '') {
         <div class="bubble"><span class="who">Stroop</span>Coucou ! Connecte-toi et on révise ensemble.</div>
         ${stroopImg('etude')}
       </div>
-      <h1>Connexion</h1>
+      <div><h1 style="font-size:36px">Stroop Study</h1><p class="muted" style="margin:4px 0 0;font-weight:700">Révise en te testant, un peu chaque jour.</p></div>
       ${err ? `<p class="feedback ko" role="alert">${esc(err)}</p>` : ''}
       <button class="btn plain block" id="google" style="min-height:58px">${GOOGLE_SVG}Continuer avec Google</button>
       <button class="flag-btn" id="mail" style="align-self:center">Utiliser une adresse e-mail à la place</button>
@@ -797,7 +797,7 @@ async function viewProfil() {
   document.getElementById('export').onclick = async () => {
     const data = await S.exportAll();
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-    const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `stroop-export-${today()}.json`; a.click();
+    const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `stroop-study-export-${today()}.json`; a.click();
     setTimeout(() => URL.revokeObjectURL(a.href), 2000);
   };
   document.getElementById('logout').onclick = async () => { session = null; clearSaved(); await signOut(auth); };
