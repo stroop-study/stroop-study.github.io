@@ -5,10 +5,14 @@ on:
     - cron: '*/15 * * * *'
   workflow_dispatch:
     inputs:
-      essai:
-        description: 'Essai à blanc (affiche les messages sans les envoyer)'
-        type: boolean
-        default: true
+      mode:
+        description: 'Que faire ?'
+        type: choice
+        default: test
+        options:
+          - test
+          - essai
+          - normal
 concurrency: rappels
 jobs:
   envoyer:
@@ -25,4 +29,5 @@ jobs:
         run: node notif/envoi.mjs
         env:
           FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
-          DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.essai && '1' || '0' }}
+          TEST: ${{ github.event_name == 'workflow_dispatch' && inputs.mode == 'test' && '1' || '0' }}
+          DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.mode == 'essai' && '1' || '0' }}

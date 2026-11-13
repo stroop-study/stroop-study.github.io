@@ -170,7 +170,9 @@ export async function main({ fetchFn = fetch, now = new Date(), env = process.en
       const items = progres[m.code] || {};
       return { code: m.code, due: aRevoir(items, date, tz), neufs: Math.max(0, totals[m.code] - Object.values(items).filter((p) => p?.box).length) };
     });
-    const msgs = decider(u, { now, matieres });
+    const msgs = env.TEST === '1'
+      ? [{ creneau: 'test', title: 'Stroop Study', body: 'Test réussi : les rappels fonctionnent sur cet appareil !' }]
+      : decider(u, { now, matieres });
     if (!msgs.length) continue;
     const envoye = { ...(u.notifEnvoye || {}) };
     for (const msg of msgs) {
@@ -182,7 +184,7 @@ export async function main({ fetchFn = fetch, now = new Date(), env = process.en
         if (res === 'perime') await db.oublierJeton(u.id, tok);
         else if (res !== 'ok') console.error(res);
       }
-      envoye[msg.creneau] = date;
+      if (msg.creneau !== 'test') envoye[msg.creneau] = date;
     }
     if (!dry) await db.marquer(u.id, envoye);
   }
