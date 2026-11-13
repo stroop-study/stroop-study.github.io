@@ -115,8 +115,9 @@ input,textarea,select{font:inherit;color:var(--ink)}
 .a-sport{animation:pump 1.6s ease-in-out infinite;transform-origin:50% 100%}
 .a-fete{animation:bounce 1.4s ease-in-out infinite;transform-origin:50% 100%}
 .a-etude{animation:breathe 3.8s ease-in-out infinite;transform-origin:50% 100%}
+.a-arcenciel{animation:pump 1.8s ease-in-out infinite;transform-origin:50% 100%}
 .wiggle{animation:wiggle .5s ease-in-out}
-@media (prefers-reduced-motion:reduce){.a-contente,.a-dodo,.a-sport,.a-fete,.a-etude,.wiggle{animation:none}}
+@media (prefers-reduced-motion:reduce){.a-contente,.a-dodo,.a-sport,.a-fete,.a-etude,.a-arcenciel,.wiggle{animation:none}}
 
 /* ===== Accueil ===== */
 .hello .date{font-size:14px;color:var(--muted);font-weight:700}
@@ -425,3 +426,4 @@ body::before{content:'';position:fixed;top:0;left:0;right:0;height:env(safe-area
 
 .vtag{flex:none;font-weight:800;font-size:13px;padding:4px 10px;border-radius:999px;background:var(--ghost);color:var(--ink)}
 .btn .nb{font-size:12px;font-weight:800;padding:2px 7px;border-radius:999px;background:rgba(0,0,0,.08);margin-left:2px}
+.day .d.done.arc{background:linear-gradient(135deg,#FFB3C7,#FFE08A 30%,#B5F0C0 55%,#A9D8FF 78%,#D7B8FF);color:#1B1E2E}

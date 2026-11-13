@@ -10,7 +10,7 @@ import * as S from './store.js';
 import { today, isDue, dueDate, nextState, mastery, notionStats, seenCount, prioritize, shuffle, streak, INTERVALS } from './leitner.js';
 import { TYPES, TYPE_KEYS, NIVEAUX, typeLabel, timeFor, formatOf, checkCourte, sameSet, resolveVariants } from './types.js';
 
-const VERSION = '2.8.1';
+const VERSION = '2.9.0';
 const $app = document.getElementById('app');
 const $tab = document.getElementById('tabbar');
 const $halos = document.getElementById('halos');
@@ -48,7 +48,12 @@ const IC = {
   cards: '<path d="M8 4h11v14H8zM5 7v13h11"/>'
 };
 const ic = (n, cls = 'ic') => `<svg class="${cls}" viewBox="0 0 24 24" aria-hidden="true">${IC[n]}</svg>`;
-const STROOP = { dodo: 'stroop-dodo', contente: 'stroop-contente', sport: 'stroop-sport', fete: 'stroop-fete', etude: 'stroop-etude' };
+const STROOP = { dodo: 'stroop-dodo', contente: 'stroop-contente', sport: 'stroop-sport', fete: 'stroop-fete', etude: 'stroop-etude', arcenciel: 'stroop-arcenciel' };
+/* Journée arc-en-ciel : au moins une réponse dans chacune des matières qui ont du contenu (6 à terme), le même jour. */
+const avecContenuCodes = () => S.contenusImportes().map((c) => c.code);
+const NB_ARC = () => avecContenuCodes().length;
+const matieresDuJour = (u, k = today()) => { const ok = new Set(avecContenuCodes()); return Object.keys(u.joursM?.[k] || {}).filter((c) => ok.has(c) && u.joursM[k][c] > 0).length; };
+const estArcEnCiel = (u, k = today()) => NB_ARC() > 1 && matieresDuJour(u, k) >= NB_ARC();
 const stroopImg = (mood, cls = '') => `<img class="stroop a-${mood} ${cls}" src="assets/stroop/${STROOP[mood]}.webp" alt="Stroop la loutre" width="176" height="176" data-stroop>`;
 const pct = (n) => `${n} %`;
 const plural = (n, s, p) => `${n} ${n > 1 ? (p || s + 's') : s}`;
@@ -216,13 +221,13 @@ function nextExam(m) {
 }
 const daysUntil = (t) => Math.round((t - new Date(today()).getTime()) / 86400000);
 
-function weekStrip(jours) {
+function weekStrip(jours, u = null) {
   const d = new Date(); const dow = (d.getDay() + 6) % 7; d.setDate(d.getDate() - dow);
   const L = ['L', 'M', 'M', 'J', 'V', 'S', 'D']; const t = today();
   let html = '';
   for (let i = 0; i < 7; i++) {
     const k = today(d); const done = !!jours[k]; const isT = k === t; const fut = k > t;
-    const cls = done ? 'done' : isT ? 'today' : fut ? 'future' : 'miss';
+    const cls = done ? (u && estArcEnCiel(u, k) ? 'done arc' : 'done') : isT ? 'today' : fut ? 'future' : 'miss';
     html += `<div class="day"><span class="l">${L[i]}</span><span class="d ${cls}${isT ? ' today' : ''}" aria-label="${k}${done ? ', validé' : ''}">${done ? ic('paw', 'ic') : d.getDate()}</span></div>`;
     d.setDate(d.getDate() + 1);
   }
@@ -270,7 +275,9 @@ async function viewHome() {
   const all = await Promise.all(S.matieres().map(matiereStats));
   const s = streak(u.jours); const fait = u.jours[today()] || 0;
   const minutes = Math.floor((u.temps?.[today()] || 0) / 60);
-  const mood = !fait ? 'dodo' : minutes >= 15 ? 'sport' : 'contente';
+  const arc = estArcEnCiel(u);
+  const mood = !fait ? 'dodo' : arc ? 'arcenciel' : minutes >= 15 ? 'sport' : 'contente';
+  if (mood === 'arcenciel' && localStorage.getItem('stroop-arc-joue') !== today()) { localStorage.setItem('stroop-arc-joue', today()); setTimeout(() => son('sport'), 400); }
   if (mood === 'sport' && localStorage.getItem('stroop-sport-joue') !== today()) { localStorage.setItem('stroop-sport-joue', today()); setTimeout(() => son('sport'), 400); }
   const avecContenu = all.filter((x) => x.contenu);
   const best = [...avecContenu].sort((a, b) => (b.due + b.neufs) - (a.due + a.neufs))[0];
@@ -279,7 +286,9 @@ async function viewHome() {
   let bubble;
   if (!avecContenu.length) bubble = S.isAdmin() ? 'Zzz… Importe ton premier contenu dans Profil et on commence !' : 'Zzz… Le contenu n’est pas encore arrivé. Je fais une petite sieste en attendant.';
   else if (mood === 'dodo') bubble = s ? `Zzz… Ta série de ${plural(s, 'jour')} m’attend. Une carte suffit à me réveiller !` : 'Zzz… Une seule carte suffit pour me réveiller.';
+  else if (mood === 'arcenciel') bubble = `Les ${NB_ARC()} matières dans la même journée ! Journée arc-en-ciel 🌈 Tu es incroyable.`;
   else if (mood === 'sport') bubble = `${fmtMin(minutes)} de révision aujourd’hui ! Super Stroop est à fond${s > 1 ? `, et ta série monte à ${s} jours` : ''}.`;
+  else if (matieresDuJour(u) >= 3 && NB_ARC() - matieresDuJour(u) <= 3) bubble = `Déjà ${matieresDuJour(u)} matières aujourd’hui ! Plus que ${plural(NB_ARC() - matieresDuJour(u), 'matière')} pour une journée arc-en-ciel 🌈`;
   else bubble = todo ? 'Journée validée ! On s’en refait une petite ?' : 'Journée validée, et tout est à jour. Bravo !';
 
   const exams = all.map((x) => ({ x, e: nextExam(x.m) })).filter((o) => o.e).sort((a, b) => a.e.t - b.e.t);
@@ -297,7 +306,7 @@ async function viewHome() {
     ${stroopImg(mood)}
   </div>
   ${verifBanner()}
-  ${weekStrip(u.jours)}
+  ${weekStrip(u.jours, u)}
   ${saved ? `<button class="cta" id="resume"><span><span class="t">Reprendre ma session</span><span class="s">${esc(saved.code)} · ${saved.results?.length || saved.i}/${saved.ids.length} · là où tu t’étais arrêté·e</span></span><span class="go">${ic('arrow')}</span></button>` : ''}
   ${best || !S.isAdmin() ?  (best ? `<button class="cta cta-m c-${best.m.couleur}" id="daily" ${todo ? '' : 'disabled'}><span><span class="t">Session du jour</span><span class="s">${todo ? `${esc(best.m.code)} · ${plural(todo, 'carte')} · environ ${Math.max(2, Math.round(todo / 2))} min` : 'Rien à revoir pour l’instant'}</span></span><span class="go">${ic('arrow')}</span></button>` : '') : `<a class="cta" href="#/profil/bibliotheque"><span><span class="t">Importer du contenu</span><span class="s">Ajoute ton premier fichier de révisions</span></span><span class="go">${ic('arrow')}</span></a>`}
   ${exams.length ? `<div class="row" style="flex-wrap:wrap">${exams.slice(0, 3).map((o) => `<span class="chip m c-${o.x.m.couleur}">${esc(o.x.m.code)} · ${daysUntil(o.e.t) === 0 ? 'aujourd’hui' : 'J-' + daysUntil(o.e.t)}</span>`).join('')}</div>` : ''}
@@ -1066,8 +1075,10 @@ function viewRecap() {
   const errs = [...new Set(r.results.filter((x) => !x.correct).map((x) => x.id))];
   const titles = { flash: 'Flashcards terminées !', jour: 'Session du jour terminée !', rafale: 'Fin de la rafale !', erreurs: 'Erreurs revues !', normal: 'Session terminée !' };
   const gain = (r.m1 ?? 0) - (r.m0 ?? 0);
+  const arcNouveau = estArcEnCiel(S.getUser()) && localStorage.getItem('stroop-arc-recap') !== today();
+  if (arcNouveau) { localStorage.setItem('stroop-arc-recap', today()); setTimeout(() => son('sport'), 300); }
   $app.innerHTML = `<section class="recap c-${r.matiere.couleur}">
-    <div class="stroop-zone"><div class="bubble"><span class="who">Stroop</span>${n ? (ok / n >= 0.8 ? 'Wahou, quelle forme ! Je fais la fête.' : ok / n >= 0.5 ? 'Beau travail, ça rentre !' : 'Chaque erreur d’aujourd’hui, c’est une réussite de demain.') : 'On se refait ça bientôt ?'}</div>${stroopImg(n && ok / n < 0.5 ? 'etude' : 'fete')}</div>
+    ${arcNouveau ? `<div class="stroop-zone"><div class="bubble"><span class="who">Stroop</span>Et de ${NB_ARC()} ! Toutes tes matières dans la même journée : journée arc-en-ciel 🌈</div>${stroopImg('arcenciel')}</div>` : `<div class="stroop-zone"><div class="bubble"><span class="who">Stroop</span>${n ? (ok / n >= 0.8 ? 'Wahou, quelle forme ! Je fais la fête.' : ok / n >= 0.5 ? 'Beau travail, ça rentre !' : 'Chaque erreur d’aujourd’hui, c’est une réussite de demain.') : 'On se refait ça bientôt ?'}</div>${stroopImg(n && ok / n < 0.5 ? 'etude' : 'fete')}</div>`}
     <h1>${titles[r.kind] || titles.normal}</h1>
     <div class="stats">
       <div class="stat"><b>${n}</b><span>réponses</span></div>
@@ -1113,6 +1124,7 @@ async function viewProgres() {
   }
   const totalRep = keys.reduce((a, k) => a + (u.jours[k] || 0), 0);
   const joursTravailles = keys.filter((k) => u.jours[k]).length;
+  const joursArc = Object.keys(u.joursM || {}).filter((k) => estArcEnCiel(u, k)).length;
   const totalMin = Math.round(Object.values(u.temps || {}).reduce((a, v) => a + v, 0) / 60);
   const all = await Promise.all(S.matieres().map(matiereStats));
   const couleurOf = Object.fromEntries(S.matieres().map((m) => [m.code, m.couleur]));
@@ -1136,7 +1148,7 @@ async function viewProgres() {
   }
   const fmtD = (k) => new Date(k).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long' });
   const usedCols = [...new Set(Object.values(u.joursM || {}).flatMap((jm) => Object.keys(jm)))].filter((c) => couleurOf[c]);
-  $app.innerHTML = `<div class="between"><h1>Progrès</h1><img class="stroop small a-etude" src="assets/stroop/stroop-etude.webp" alt="Stroop studieux" style="width:88px;height:88px"></div>
+  $app.innerHTML = `<div class="between"><h1>Progrès</h1>${joursArc ? `<img class="stroop small a-arcenciel" src="assets/stroop/stroop-arcenciel.webp" alt="Stroop arc-en-ciel" style="width:88px;height:88px">` : `<img class="stroop small a-etude" src="assets/stroop/stroop-etude.webp" alt="Stroop studieux" style="width:88px;height:88px">`}</div>
     <div class="stats">
       <button class="stat" data-stat><b>${s}</b><span>${s > 1 ? 'jours d’affilée' : 'jour d’affilée'}</span></button>
       <button class="stat" data-stat><b>${best}</b><span>meilleure série</span></button>
@@ -1159,6 +1171,7 @@ async function viewProgres() {
     <ul class="list" style="list-style:none;margin:0;padding:0;gap:12px">
       <li><b>Série actuelle : ${plural(s, 'jour')}</b><br><span class="small muted">${s ? `Tu révises chaque jour depuis le ${fmtD(runStart)}. Une réponse dans la journée suffit à la prolonger.` : 'Réponds à une question aujourd’hui pour lancer une série.'}</span></li>
       <li><b>Meilleure série : ${plural(best, 'jour')}</b><br><span class="small muted">${best && bestStart ? (best > 1 ? `Ton record de jours de révision d’affilée, du ${fmtD(bestStart)} au ${fmtD(bestEnd)}.` : `Ton record de jours de révision d’affilée (le ${fmtD(bestEnd)}).`) : 'Pas encore de série.'}</span></li>
+      <li><b>${plural(joursArc, 'journée arc-en-ciel', 'journées arc-en-ciel')} 🌈</b><br><span class="small muted">${joursArc ? 'Les jours où tu as révisé tes' : 'Révise tes'} ${NB_ARC()} matières dans la même journée${joursArc ? '.' : ' pour débloquer Stroop arc-en-ciel.'}</span></li>
       <li><b>${plural(totalRep, 'réponse')}</b><br><span class="small muted">Sur ${plural(joursTravailles, 'jour')} de révision${totalMin ? `, pour environ ${fmtMin(totalMin)} de révision depuis le 13 novembre` : ''}.</span></li>
     </ul>
     <button class="btn primary block" data-close>OK</button>`));
