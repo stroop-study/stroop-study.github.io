@@ -8,3 +8,7 @@ export const firebaseConfig = {
   messagingSenderId: "610917370738",
   appId: "1:610917370738:web:cfcfed8d2044f4e52babeb"
 };
+
+// Clé publique « Web Push » (Firebase > Paramètres du projet > Cloud Messaging > Certificats Web Push).
+// Publique elle aussi : elle sert seulement à identifier l'appli auprès du service de notifications.
+export const vapidKey = '';

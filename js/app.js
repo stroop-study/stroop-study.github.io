@@ -1,5 +1,7 @@
 // Stroop Study — application principale (routeur + écrans).
 import { figureHtml } from './figures.js';
+import { son, getSons, setSons } from './sons.js';
+import * as N from './notifs.js';
 import {
   auth, onAuthStateChanged, GoogleAuthProvider, signInWithPopup, signInWithRedirect, getRedirectResult,
   sendEmailVerification, signInWithEmailAndPassword, createUserWithEmailAndPassword, sendPasswordResetEmail, signOut
@@ -8,7 +10,7 @@ import * as S from './store.js';
 import { today, isDue, dueDate, nextState, mastery, notionStats, seenCount, prioritize, shuffle, streak, INTERVALS } from './leitner.js';
 import { TYPES, TYPE_KEYS, NIVEAUX, typeLabel, timeFor, formatOf, checkCourte, sameSet, resolveVariants } from './types.js';
 
-const VERSION = '2.5.0';
+const VERSION = '2.6.0';
 const $app = document.getElementById('app');
 const $tab = document.getElementById('tabbar');
 const $halos = document.getElementById('halos');
@@ -62,6 +64,10 @@ function applyTheme() {
   const pref = localStorage.getItem('theme') || 'auto';
   const t = pref === 'auto' ? (mq.matches ? 'sombre' : 'clair') : pref;
   document.documentElement.dataset.theme = t;
+  // barre du haut (barre d'état, navigateur) assortie au thème choisi dans l'appli
+  document.querySelectorAll('meta[name="theme-color"]').forEach((m) => m.remove());
+  const meta = document.createElement('meta'); meta.name = 'theme-color'; meta.content = t === 'sombre' ? '#10142A' : '#F4F5FB';
+  document.head.appendChild(meta);
 }
 mq.addEventListener?.('change', applyTheme);
 applyTheme();
@@ -94,7 +100,7 @@ async function route() {
     $app.innerHTML = `<div class="card empty"><p><b>Oups, un souci.</b></p><p class="muted small">${esc(e.message)}</p><a class="btn plain" href="#/">Revenir à l'accueil</a></div>`;
   }
 }
-window.addEventListener('hashchange', () => { document.querySelectorAll('.sheet-back, .pause-ov').forEach((e) => e.remove()); route(); });
+window.addEventListener('hashchange', () => { document.querySelectorAll('.sheet-back, .pause-ov').forEach((e) => e.remove()); if (lockedY !== null) { lockedY = 0; unlockScroll(); } route(); });
 
 /* ================= Connexion ================= */
 const GOOGLE_SVG = '<svg width="20" height="20" viewBox="0 0 48 48" aria-hidden="true"><path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3C33.7 32.7 29.2 36 24 36c-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.8 1.2 7.9 3.1l5.7-5.7C34 6.1 29.3 4 24 4 12.9 4 4 12.9 4 24s8.9 20 20 20 20-8.9 20-20c0-1.3-.1-2.4-.4-3.5z"/><path fill="#FF3D00" d="M6.3 14.7l6.6 4.8C14.7 15.1 19 12 24 12c3.1 0 5.8 1.2 7.9 3.1l5.7-5.7C34 6.1 29.3 4 24 4 16.3 4 9.7 8.3 6.3 14.7z"/><path fill="#4CAF50" d="M24 44c5.2 0 9.9-2 13.4-5.2l-6.2-5.2C29.2 35.1 26.7 36 24 36c-5.2 0-9.6-3.3-11.3-8l-6.5 5C9.5 39.6 16.2 44 24 44z"/><path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3c-.8 2.2-2.2 4.2-4.1 5.6l6.2 5.2C37 39.2 44 34 44 24c0-1.3-.1-2.4-.4-3.5z"/></svg>';
@@ -258,6 +264,7 @@ async function viewHome() {
   const s = streak(u.jours); const fait = u.jours[today()] || 0;
   const minutes = Math.floor((u.temps?.[today()] || 0) / 60);
   const mood = !fait ? 'dodo' : minutes >= 15 ? 'sport' : 'contente';
+  if (mood === 'sport' && localStorage.getItem('stroop-sport-joue') !== today()) { localStorage.setItem('stroop-sport-joue', today()); setTimeout(() => son('sport'), 400); }
   const avecContenu = all.filter((x) => x.contenu);
   const best = [...avecContenu].sort((a, b) => (b.due + b.neufs) - (a.due + a.neufs))[0];
   const todo = best ? Math.min(12, best.due + best.neufs) : 0;
@@ -306,6 +313,7 @@ async function viewHome() {
   bindVerif();
   document.getElementById('resume')?.addEventListener('click', () => { session = saved; go('#/session'); });
   document.getElementById('daily')?.addEventListener('click', () => startSession({ code: best.m.code, kind: 'jour' }));
+  if (N.proposer(u)) setTimeout(() => { if (location.hash === '' || location.hash === '#/') inviteNotif(); }, 900);
 }
 const semestreLabel = (s) => (s || '').replace('-S', ' · Semestre ');
 
@@ -408,7 +416,7 @@ async function viewMatiere(code) {
       </div>
       <button class="card cfg-card" id="cfg"><span><b>Réglages de session</b><span class="small muted" style="display:block">${esc(cfgSummary(cfg))}</span></span><span class="flag-btn" style="color:var(--m-ink);font-weight:800">Modifier</span></button>
       <div class="actions">
-        <button class="cta" id="go" ${selItems.length ? '' : 'disabled'}><span><span class="t">Lancer la session</span><span class="s">${st.sel.size ? (selItems.length ? `${plural(st.sel.size, 'chapitre')} · ${plural(nb, 'question')}` : 'Aucune question avec ces réglages') : 'Coche au moins un chapitre'}</span></span><span class="go">${ic('arrow')}</span></button>
+        <button class="cta cta-m" id="go" ${selItems.length ? '' : 'disabled'}><span><span class="t">Lancer la session</span><span class="s">${st.sel.size ? (selItems.length ? `${plural(st.sel.size, 'chapitre')} · ${plural(nb, 'question')}` : 'Aucune question avec ces réglages') : 'Coche au moins un chapitre'}</span></span><span class="go">${ic('arrow')}</span></button>
         <div class="two">
           <button class="btn soft" id="rafale" ${selItems.length ? '' : 'disabled'}>${ic('bolt')}Rafale 2 min</button>
           <button class="btn plain" id="err" ${errItems.length ? '' : 'disabled'}>${ic('redo')}Mes erreurs · ${errItems.length}</button>
@@ -464,11 +472,24 @@ function leitnerTuto(m) {
     <button class="btn primary block" data-close>C’est parti</button>`, m ? `c-${m.couleur}` : 'c-orange');
 }
 
+// Bloque le défilement de la page derrière une fenêtre ouverte (y compris sur iPhone).
+let lockedY = null;
+function lockScroll() {
+  if (lockedY !== null) return;
+  lockedY = window.scrollY;
+  Object.assign(document.body.style, { position: 'fixed', top: `-${lockedY}px`, left: '0', right: '0', width: '100%' });
+}
+function unlockScroll() {
+  if (lockedY === null || document.querySelector('.sheet-back, .pause-ov')) return;
+  Object.assign(document.body.style, { position: '', top: '', left: '', right: '', width: '' });
+  window.scrollTo(0, lockedY); lockedY = null;
+}
 function openSheet(html, cls = '') {
   const back = document.createElement('div');
   back.className = 'sheet-back';
   back.innerHTML = `<div class="sheet ${cls}" role="dialog" aria-modal="true">${html}</div>`;
-  const close = () => back.remove();
+  lockScroll();
+  const close = () => { back.remove(); unlockScroll(); };
   back.onclick = (e) => { if (e.target === back) close(); };
   document.body.appendChild(back);
   back.querySelectorAll('[data-close]').forEach((b) => b.onclick = close);
@@ -589,9 +610,9 @@ function matiereSheet(m, onClose) {
     back.querySelector('#neg').onchange = async (e) => { await S.saveMatiere(m.code, { negatif: e.target.checked }); };
     bindExam(mm, () => { Object.assign(m, S.getMatiere(m.code)); draw(); });
   };
-  const close = () => { back.remove(); route(); };
+  const close = () => { back.remove(); unlockScroll(); route(); };
   back.onclick = (e) => { if (e.target === back) close(); };
-  document.body.appendChild(back); draw();
+  lockScroll(); document.body.appendChild(back); draw();
 }
 
 /* ================= Sessions ================= */
@@ -647,7 +668,7 @@ async function viewSession() {
   clearInterval(timerId); clearInterval(qTimerId);
 
   const finish = () => {
-    clearInterval(timerId); clearInterval(qTimerId); clearSaved();
+    clearInterval(timerId); clearInterval(qTimerId); clearSaved(); son('end');
     lastRecap = { ...session, matiere: m, m1: mastery(Object.values(byId), prog) };
     session = null; go('#/recap');
   };
@@ -700,6 +721,7 @@ async function viewSession() {
     st.answered = true; st.correct = correct;
     clearInterval(qTimerId);
     const ns = nextState(pBefore, correct, null);
+    son(!correct ? 'ko' : ns.box > (pBefore.box || 0) && !ns.practice ? 'up' : 'ok');
     await S.recordAnswer(session.code, it.id, ns);
     st.ns = ns;
     session.results.push({ id: it.id, correct, before: pBefore.box || 0, after: ns.box, practice: ns.practice, ...extra });
@@ -771,12 +793,12 @@ async function viewSession() {
         <div class="between">${flag()}${st.flipped ? ficheLink() : ''}</div>
       </div>`;
       const card = document.getElementById('card');
-      card.onclick = () => { if (card.dataset.dragged) { delete card.dataset.dragged; return; } st.flipped = !st.flipped; render(); };
+      card.onclick = () => { if (card.dataset.dragged) { delete card.dataset.dragged; return; } st.flipped = !st.flipped; son('flip'); render(); };
       if (st.flipped) {
         document.getElementById('no').onclick = async () => { await answer(false); advance(); };
         document.getElementById('yes').onclick = async () => { await answer(true); advance(); };
         document.getElementById('half').onclick = async () => {
-          st.answered = true; st.correct = true;
+          st.answered = true; st.correct = true; son('ok');
           const ns = nextState(pBefore, true, 'pif');
           await S.recordAnswer(session.code, it.id, ns);
           session.results.push({ id: it.id, correct: true, before: pBefore.box || 0, after: ns.box, practice: ns.practice });
@@ -843,8 +865,8 @@ async function viewSession() {
           const [txt, cat] = it.items[idx]; const pick = st.triPick[idx];
           const cls = st.answered ? (pick === cat ? 'ok' : 'ko') : '';
           return `<div class="titem ${cls}"><span class="ttxt">${esc(txt)}</span>
-            <div class="seg tseg">${it.categories.map((c, ci) => `<button data-tri="${idx}" data-cat="${ci}" aria-pressed="${pick === ci}" ${st.answered ? 'disabled' : ''}>${esc(c)}</button>`).join('')}</div>
-            ${st.answered && pick !== cat ? `<span class="small" style="font-weight:800">→ ${esc(it.categories[cat])}</span>` : ''}</div>`;
+            <div class="seg tseg">${it.categories.map((c, ci) => `<button data-tri="${idx}" data-cat="${ci}" aria-pressed="${pick === ci}" class="${st.answered ? (ci === cat ? 'segok' : pick === ci ? 'segko' : '') : ''}" ${st.answered ? 'disabled' : ''}>${esc(c)}</button>`).join('')}</div>
+            ${st.answered && pick !== cat ? `<span class="small tfix">${pick === undefined ? 'Non classé' : 'Pas « ' + esc(it.categories[pick]) + ' »'} → c’était « ${esc(it.categories[cat])} »</span>` : ''}</div>`;
         }).join('')}</div>`;
       foot = footer(Object.keys(st.triPick).length === it.items.length);
     } else if (fmt === 'courte') {
@@ -860,25 +882,25 @@ async function viewSession() {
     $app.querySelectorAll('[data-i]').forEach((b) => b.onclick = () => {
       const i = Number(b.dataset.i);
       if (fmt === 'qcm') { st.picked.has(i) ? st.picked.delete(i) : st.picked.add(i); } else { st.picked = new Set([i]); }
-      render();
+      son('tap'); render();
     });
     $app.querySelectorAll('[data-vf]').forEach((b) => b.onclick = async () => { st.pickedVf = b.dataset.vf === 'true'; await answer(st.pickedVf === it.vrai); render(); });
-    $app.querySelectorAll('[data-up]').forEach((b) => b.onclick = () => { const p = Number(b.dataset.up); [st.order[p - 1], st.order[p]] = [st.order[p], st.order[p - 1]]; st.moved = true; render(); });
-    $app.querySelectorAll('[data-down]').forEach((b) => b.onclick = () => { const p = Number(b.dataset.down); [st.order[p + 1], st.order[p]] = [st.order[p], st.order[p + 1]]; st.moved = true; render(); });
+    $app.querySelectorAll('[data-up]').forEach((b) => b.onclick = () => { const p = Number(b.dataset.up); [st.order[p - 1], st.order[p]] = [st.order[p], st.order[p - 1]]; st.moved = true; son('tap'); render(); });
+    $app.querySelectorAll('[data-down]').forEach((b) => b.onclick = () => { const p = Number(b.dataset.down); [st.order[p + 1], st.order[p]] = [st.order[p], st.order[p + 1]]; st.moved = true; son('tap'); render(); });
     const isSame = (sel, side, i) => sel && sel.side === side && sel.i === i;
     const tapAssoc = (side, i) => {
       const l0 = side === 'l' ? i : Object.keys(st.pairs).map(Number).find((k) => Number(st.pairs[k]) === i);
       if (l0 !== undefined && st.pairs[l0] !== undefined) {
         delete st.pairs[l0]; st.pairOrder = (st.pairOrder || []).filter((x) => x !== l0); st.sel = null; return render();
       }
-      if (!st.sel || st.sel.side === side) { st.sel = isSame(st.sel, side, i) ? null : { side, i }; return render(); }
+      if (!st.sel || st.sel.side === side) { st.sel = isSame(st.sel, side, i) ? null : { side, i }; son('tap'); return render(); }
       const l = side === 'l' ? i : st.sel.i, r = side === 'r' ? i : st.sel.i;
       st.pairs[l] = r; st.pairOrder = [...(st.pairOrder || []), l]; st.sel = null;
-      render();
+      son('pair'); render();
     };
     $app.querySelectorAll('[data-left]').forEach((b) => b.onclick = () => tapAssoc('l', Number(b.dataset.left)));
     $app.querySelectorAll('[data-right]').forEach((b) => b.onclick = () => tapAssoc('r', Number(b.dataset.right)));
-    $app.querySelectorAll('[data-tri]').forEach((b) => b.onclick = () => { st.triPick[Number(b.dataset.tri)] = Number(b.dataset.cat); render(); });
+    $app.querySelectorAll('[data-tri]').forEach((b) => b.onclick = () => { st.triPick[Number(b.dataset.tri)] = Number(b.dataset.cat); son('tap'); render(); });
     const rep = document.getElementById('rep');
     if (rep && !st.answered) {
       rep.oninput = () => { st.text = rep.value; };
@@ -903,17 +925,17 @@ async function viewSession() {
     };
     document.getElementById('flag').onclick = () => flagSheet(session.code, it);
     document.getElementById('pause').onclick = () => {
-      session.pausedAt = Date.now();
+      session.pausedAt = Date.now(); son('pause');
       const ov = document.createElement('div');
       ov.className = 'pause-ov';
       ov.innerHTML = `<div class="pause-box">${stroopImg('dodo')}<h2>En pause</h2><p class="muted" style="margin:0">Le chrono est arrêté. Prends ton temps !</p><button class="btn primary" id="resumeP">${ic('play')}Reprendre</button></div>`;
-      document.body.appendChild(ov);
+      document.body.appendChild(ov); lockScroll();
       ov.querySelector('#resumeP').onclick = () => {
-        const d = Date.now() - session.pausedAt; session.pausedAt = null;
+        const d = Date.now() - session.pausedAt; session.pausedAt = null; son('reprise');
         if (st.deadline) st.deadline += d;
         st.shownAt += d;
         if (session.endsAt) session.endsAt += d;
-        ov.remove();
+        ov.remove(); unlockScroll();
       };
     };
     document.getElementById('fiche')?.addEventListener('click', () => ficheSheet(m, chapById[it.chapitre], it.section));
@@ -928,6 +950,8 @@ async function viewSession() {
       const left = st.deadline - Date.now();
       const b = document.getElementById('qbar');
       if (b) { b.style.width = Math.max(0, (left / totalMs) * 100) + '%'; b.classList.toggle('late', left < 5000); }
+      const sec = Math.ceil(left / 1000);
+      if (sec <= 5 && sec >= 1 && sec !== st.lastTick) { st.lastTick = sec; son('tick'); }
       if (left <= 0) {
         clearInterval(qTimerId); st.timeout = true;
         if (complete()) { st.autoValid = true; await answer(grade(), { timeout: true }); } else await answer(false, { timeout: true });
@@ -1108,6 +1132,57 @@ async function viewProgres() {
     <button class="btn primary block" data-close>OK</button>`));
 }
 
+/* ================= Notifications ================= */
+function notifCard() {
+  const e = N.etat(), n = S.getNotif();
+  const msg = {
+    bientot: 'Les rappels arrivent bientôt : ils ne sont pas encore branchés.',
+    installer: 'Sur iPhone, les rappels ne fonctionnent que si tu ouvres l’appli depuis son icône sur l’écran d’accueil (Partager → Sur l’écran d’accueil).',
+    impossible: 'Ce navigateur ne permet pas les notifications.',
+    refuse: 'Les notifications sont bloquées pour l’appli. Pour les réactiver : Réglages de l’iPhone → Notifications → Stroop Study.'
+  }[e];
+  const on = e === 'actif';
+  return `<div class="card" style="padding:16px;display:flex;flex-direction:column;gap:12px">
+    <div class="between"><h2 class="section-title">Rappels</h2>${msg ? '' : `<label class="switch"><input type="checkbox" id="notifOn" ${on ? 'checked' : ''}><span></span><b class="sr">Activer les rappels</b></label>`}</div>
+    ${msg ? `<p class="muted small" style="margin:0">${msg}</p>` : `
+    <p class="muted small" style="margin:0">Jamais plus de 2 par jour, et seulement si tu n’as pas encore révisé.</p>
+    <div class="list" style="gap:10px;${on ? '' : 'opacity:.5;pointer-events:none'}">
+      <label class="nrow"><input type="checkbox" data-np="rappel" ${n.rappel ? 'checked' : ''}><span><b>Rappel du jour</b><br><span class="small muted">En semaine, et tous les jours dans les 2 semaines avant un examen</span></span><input type="time" id="nh" value="${esc(n.heure)}"></label>
+      <label class="nrow"><input type="checkbox" data-np="serie" ${n.serie ? 'checked' : ''}><span><b>Série en danger</b><br><span class="small muted">Si ta série dure depuis 3 jours ou plus</span></span><input type="time" id="ns" value="${esc(n.soir)}"></label>
+      <label class="nrow"><input type="checkbox" data-np="examens" ${n.examens ? 'checked' : ''}><span><b>Compte à rebours</b><br><span class="small muted">J-14, J-7, J-3 et J-1 avant un examen (dates à saisir dans chaque matière)</span></span></label>
+    </div>`}
+  </div>`;
+}
+function bindNotifCard() {
+  const t = document.getElementById('notifOn');
+  if (t) t.onchange = async () => {
+    try {
+      if (t.checked) { const ok = await N.activer(); toast(ok ? 'Rappels activés' : 'Rappels non autorisés'); }
+      else { await N.desactiver(); toast('Rappels désactivés'); }
+    } catch (e) { console.error(e); toast('Impossible d’activer les rappels pour l’instant'); }
+    viewProfil();
+  };
+  $app.querySelectorAll('[data-np]').forEach((c) => c.onchange = () => S.saveNotif({ [c.dataset.np]: c.checked }));
+  const nh = document.getElementById('nh'); if (nh) nh.onchange = () => S.saveNotif({ heure: nh.value || '09:30' }).then(() => toast('Heure enregistrée'));
+  const ns = document.getElementById('ns'); if (ns) ns.onchange = () => S.saveNotif({ soir: ns.value || '18:30' }).then(() => toast('Heure enregistrée'));
+}
+function inviteNotif() {
+  const sh = openSheet(`
+    <div style="display:flex;flex-direction:column;align-items:center;gap:10px;text-align:center">
+      <img class="stroop" src="assets/stroop/stroop-contente.webp" alt="" style="width:110px;height:110px">
+      <h2>Je te fais signe ?</h2>
+      <p style="margin:0">Un petit rappel le matin en semaine si tu n’as pas encore révisé, un message si ta série est en danger, et un compte à rebours avant tes examens.</p>
+      <p class="muted small" style="margin:0">Jamais plus de 2 par jour. Tu pourras tout régler dans Profil.</p>
+    </div>
+    <button class="btn primary block" id="nYes">Activer les rappels</button>
+    <button class="flag-btn" data-close style="align-self:center">Plus tard</button>`);
+  N.reporter();
+  sh.back.querySelector('#nYes').onclick = async () => {
+    try { const ok = await N.activer(); toast(ok ? 'Rappels activés' : 'Rappels non autorisés'); } catch (e) { console.error(e); toast('Impossible d’activer les rappels pour l’instant'); }
+    sh.close();
+  };
+}
+
 /* ================= Profil ================= */
 async function viewProfil() {
   tabbar('#/profil'); setHalo(null);
@@ -1119,6 +1194,12 @@ async function viewProfil() {
       <label class="field">Prénom<input id="prenom" value="${esc(u.prenom || '')}" autocomplete="given-name"></label>
       <div class="field">Apparence<div class="seg" role="group">${[['auto', 'Auto'], ['clair', 'Clair'], ['sombre', 'Sombre']].map(([k, l]) => `<button data-th="${k}" aria-pressed="${theme === k}">${l}</button>`).join('')}</div></div>
       <label class="field">Semestre en cours<input id="sem" value="${esc(u.semestre || '')}" placeholder="ex. L1-S2"></label>
+    </div>
+    ${notifCard()}
+    <div class="card" style="padding:16px;display:flex;flex-direction:column;gap:12px">
+      <div class="between"><h2 class="section-title">Sons</h2><label class="switch"><input type="checkbox" id="sonOn" ${getSons().on ? 'checked' : ''}><span></span><b class="sr">Activer les sons</b></label></div>
+      <div class="row" style="gap:12px;${getSons().on ? '' : 'opacity:.5'}"><span class="small muted">Volume</span><input type="range" id="sonVol" min="0" max="100" step="5" value="${Math.round(getSons().vol * 100)}" style="flex:1"><button class="flag-btn" id="sonTest">Écouter</button></div>
+      <p class="muted small" style="margin:0">Sur iPhone, les sons suivent le bouton silencieux.</p>
     </div>
     ${S.isAdmin() ? `<div class="card" style="padding:16px;display:flex;flex-direction:column;gap:12px">
       <h2 class="section-title">Importer du contenu</h2>
@@ -1152,6 +1233,10 @@ async function viewProfil() {
       <button class="btn no block" id="logout">Me déconnecter</button>
       <p class="muted small" style="margin:0;text-align:center">${esc(auth.currentUser?.email || '')} · version ${VERSION}</p>
     </div>`;
+  bindNotifCard();
+  document.getElementById('sonOn').onchange = (e) => { setSons({ on: e.target.checked }); if (e.target.checked) son('ok'); viewProfil(); };
+  document.getElementById('sonVol').onchange = (e) => { setSons({ vol: Number(e.target.value) / 100 }); son('ok'); };
+  document.getElementById('sonTest').onclick = () => son('up');
   document.getElementById('prenom').onchange = (e) => S.saveUser({ prenom: e.target.value.trim() }).then(() => toast('Enregistré'));
   document.getElementById('sem').onchange = (e) => S.saveUser({ semestre: e.target.value.trim() || 'L1-S1' }).then(() => toast('Enregistré'));
   $app.querySelectorAll('[data-th]').forEach((b) => b.onclick = () => { localStorage.setItem('theme', b.dataset.th); S.saveUser({ theme: b.dataset.th }); applyTheme(); viewProfil(); });

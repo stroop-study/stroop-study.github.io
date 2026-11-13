@@ -1,0 +1,28 @@
+# Rappels de Stroop Study : vérifie toutes les 15 minutes qui doit recevoir une notification.
+name: Rappels
+on:
+  schedule:
+    - cron: '*/15 * * * *'
+  workflow_dispatch:
+    inputs:
+      essai:
+        description: 'Essai à blanc (affiche les messages sans les envoyer)'
+        type: boolean
+        default: true
+concurrency: rappels
+jobs:
+  envoyer:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: notif
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Envoyer les rappels
+        run: node notif/envoi.mjs
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.essai && '1' || '0' }}

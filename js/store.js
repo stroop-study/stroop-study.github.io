@@ -112,6 +112,15 @@ export async function saveUser(patch) {
   await setDoc(userRef(), patch, { merge: true });
 }
 
+/** Réglages des notifications (fusionnés avec l'existant). */
+export const NOTIF_DEFAUT = { actif: false, heure: '09:30', soir: '18:30', rappel: true, serie: true, examens: true };
+export const getNotif = () => ({ ...NOTIF_DEFAUT, ...(state.user.notif || {}) });
+export async function saveNotif(patch) {
+  state.user.notif = { ...(state.user.notif || {}), ...patch };
+  if (patch.tokens) state.user.notif.tokens = { ...(state.user.notif.tokens || {}), ...patch.tokens };
+  await setDoc(userRef(), { notif: patch }, { merge: true });
+}
+
 export function matieres() {
   return [...state.user.matieres].sort((a, b) => (a.ordre ?? 0) - (b.ordre ?? 0));
 }
