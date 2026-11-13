@@ -518,7 +518,7 @@ function cfgSheet(m, x, st, onDone) {
       <div class="field">Difficulté
         <div class="seg">${[['tous', 'Tous'], ['1', 'Facile'], ['2', 'Moyen'], ['3', 'Difficile']].map(([k, l]) => `<button data-niv="${k}" aria-pressed="${String(cfg.niveau) === k}">${l}</button>`).join('')}</div>
       </div>
-      <label class="switch"><input type="checkbox" id="chrono" ${cfg.chrono ? 'checked' : ''}><span><b>Chrono</b><span class="small muted" style="display:block">20 s pour une question facile, 40 s pour une moyenne, 1 min pour une difficile. Hors flashcards.</span></span></label>
+      <label class="switch"><input type="checkbox" id="chrono" ${cfg.chrono ? 'checked' : ''}><span><b>Chrono</b><span class="small muted" style="display:block">Temps adapté à la difficulté et à la longueur de chaque question (de 20 s à 3 min). Hors flashcards.</span></span></label>
       <p class="small muted" style="margin:0">${st.sel.size ? `Dans les chapitres cochés : ${plural(total, 'question disponible', 'questions disponibles')}.` : `Dans toute la matière : ${plural(total, 'question disponible', 'questions disponibles')}. Coche des chapitres pour affiner.`}</p>
       <button class="btn primary block" data-close>Enregistrer</button>`;
     const q = (s) => sh.back.querySelectorAll(s);
