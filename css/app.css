@@ -4,7 +4,7 @@
   --cta:#1B1E2E; --ctaInk:#FFFFFF; --ghost:#E9EBF3;
   --okS:#1E9E5A; --okBg2:#D3F2E0; --koS:#D63A3A; --koBg2:#FBDADA;
   --halo1:#FFDCC2; --halo2:#DCD8FF; --halo3:#CDEBFF;
-  --done:#FFB27A; --doneInk:#5A2A08; --good:#1F6843; --goodBg:#DDF4E5; --bad:#9C2D2D; --badBg:#FBE1E1;
+  --done:#1B1E2E; --doneInk:#F6EEE4; --good:#1F6843; --goodBg:#DDF4E5; --bad:#9C2D2D; --badBg:#FBE1E1;
   --no:#2F5FB3; --noBg:#DCE7FB; --shadow:0 6px 18px rgba(27,30,46,.08);
   --orange-bg:#FFE6D3; --orange-ink:#8F3E0E; --orange-acc:#FF9A52; --orange-halo:#FFCFA8;
   --rose-bg:#FDE1EC; --rose-ink:#93295A; --rose-acc:#EE79A9; --rose-halo:#FBC7DC;
@@ -16,10 +16,10 @@
 }
 [data-theme="sombre"] {
   --bg:#10142A; --card:#1A2042; --ink:#F1F2F8; --muted:#A8AECA; --line:#2A3159;
-  --cta:#FFB27A; --ctaInk:#2A1404; --ghost:#252B52;
+  --cta:#F3EADF; --ctaInk:#1B1E2E; --ghost:#252B52;
   --okS:#3DD68C; --okBg2:#163D2B; --koS:#FF6B6B; --koBg2:#4A1E22;
   --halo1:#4A2F3A; --halo2:#2B2F6E; --halo3:#173E5C;
-  --done:#FFB27A; --doneInk:#2A1404; --good:#C2EDD3; --goodBg:#1C3A30; --bad:#FFC9C9; --badBg:#4A2228;
+  --done:#F3EADF; --doneInk:#1B1E2E; --good:#C2EDD3; --goodBg:#1C3A30; --bad:#FFC9C9; --badBg:#4A2228;
   --no:#B9D0FA; --noBg:#24345E; --shadow:0 6px 18px rgba(0,0,0,.25);
   --orange-bg:#3A2721; --orange-ink:#FFD2B0; --orange-acc:#FFA766; --orange-halo:#5A3424;
   --rose-bg:#3A2132; --rose-ink:#FBC4DB; --rose-acc:#F08BB4; --rose-halo:#57283F;
@@ -412,3 +412,13 @@ body::before{content:'';position:fixed;top:0;left:0;right:0;height:env(safe-area
 .menu-txt{flex:1;min-width:0;display:flex;flex-direction:column}
 .menu-badge{font-size:12px;font-weight:800;background:var(--ghost);color:var(--muted);padding:3px 9px;border-radius:999px;white-space:nowrap}
 .menu-row>svg:last-child{color:var(--muted)}
+
+/* ===== Identité de l'appli : la nacre (coquillage de loutre), hors des couleurs des matières ===== */
+:root{--nacre:conic-gradient(from 210deg,#F7EFE6,#EAE3F8,#DFF0F2,#F6E6EE,#F3F0E1,#F7EFE6)}
+.day .d.done{background:var(--nacre);color:#1B1E2E;box-shadow:inset 0 0 0 1px rgba(27,30,46,.08),0 2px 8px rgba(0,0,0,.12)}
+.day .d.done svg{width:18px;height:18px}
+[data-theme="sombre"] .cta:not(.cta-m),[data-theme="sombre"] .btn.primary{background:var(--nacre);color:#1B1E2E}
+[data-theme="sombre"] .cta:not(.cta-m) .go{background:#1B1E2E;color:#F3EADF}
+.avatar{background:var(--nacre);color:#1B1E2E}
+.seg button[aria-pressed="true"]{color:#1B1E2E}
+[data-theme="sombre"] .seg:not(.tseg) button[aria-pressed="true"]{background:var(--m-acc,#F3EADF)}

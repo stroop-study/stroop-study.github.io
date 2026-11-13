@@ -10,7 +10,7 @@ import * as S from './store.js';
 import { today, isDue, dueDate, nextState, mastery, notionStats, seenCount, prioritize, shuffle, streak, INTERVALS } from './leitner.js';
 import { TYPES, TYPE_KEYS, NIVEAUX, typeLabel, timeFor, formatOf, checkCourte, sameSet, resolveVariants } from './types.js';
 
-const VERSION = '2.7.2';
+const VERSION = '2.7.3';
 const $app = document.getElementById('app');
 const $tab = document.getElementById('tabbar');
 const $halos = document.getElementById('halos');
@@ -42,6 +42,7 @@ const IC = {
   bell: '<path d="M6 16V11a6 6 0 0 1 12 0v5l1.5 2h-15zM10 20a2 2 0 0 0 4 0"/>',
   sun: '<path d="M12 16a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>',
   books: '<path d="M5 4h4v16H5zM10 4h4v16h-4zM15.5 5l3.5-1 2.5 15-3.5 1z"/>',
+  paw: '<g fill="currentColor" stroke="none"><ellipse cx="12" cy="15.6" rx="4.6" ry="3.9"/><ellipse cx="6.2" cy="10.4" rx="1.9" ry="2.4"/><ellipse cx="9.6" cy="6.8" rx="1.9" ry="2.5"/><ellipse cx="14.4" cy="6.8" rx="1.9" ry="2.5"/><ellipse cx="17.8" cy="10.4" rx="1.9" ry="2.4"/></g>',
   help: '<path d="M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM9.5 9.5a2.5 2.5 0 1 1 3.5 2.3c-.6.3-1 .9-1 1.6v.6M12 17h.01"/>',
   play: '<path d="M8 5l11 7-11 7z"/>'
 };
@@ -220,7 +221,7 @@ function weekStrip(jours) {
   for (let i = 0; i < 7; i++) {
     const k = today(d); const done = !!jours[k]; const isT = k === t; const fut = k > t;
     const cls = done ? 'done' : isT ? 'today' : fut ? 'future' : 'miss';
-    html += `<div class="day"><span class="l">${L[i]}</span><span class="d ${cls}${isT ? ' today' : ''}" aria-label="${k}${done ? ', validé' : ''}">${done ? ic('check', 'ic') : d.getDate()}</span></div>`;
+    html += `<div class="day"><span class="l">${L[i]}</span><span class="d ${cls}${isT ? ' today' : ''}" aria-label="${k}${done ? ', validé' : ''}">${done ? ic('paw', 'ic') : d.getDate()}</span></div>`;
     d.setDate(d.getDate() + 1);
   }
   return `<div class="card week" aria-label="Ma semaine">${html}</div>`;
@@ -348,7 +349,7 @@ function getCfg(code) {
   try { c = JSON.parse(localStorage.getItem(CFG_KEY(code)) || 'null'); } catch { c = null; }
   c = c || {};
   return {
-    types: Array.isArray(c.types) && c.types.length ? c.types.filter((t) => TYPE_KEYS.includes(t)) : TYPE_KEYS.slice(),
+    types: Array.isArray(c.types) ? c.types.filter((t) => TYPE_KEYS.includes(t)) : TYPE_KEYS.slice(),
     n: c.n ?? 20,
     niveau: c.niveau ?? 'tous',
     chrono: c.v === 2 ? !!c.chrono : true
@@ -525,11 +526,10 @@ function cfgSheet(m, x, st, onDone) {
     q('[data-type]').forEach((b) => b.onclick = () => {
       const k = b.dataset.type;
       cfg.types = cfg.types.includes(k) ? cfg.types.filter((t) => t !== k) : [...cfg.types, k];
-      if (!cfg.types.length) cfg.types = [k];
       saveCfg(m.code, cfg); draw();
     });
     sh.back.querySelector('#tall').onclick = () => { cfg.types = TYPE_KEYS.slice(); saveCfg(m.code, cfg); draw(); };
-    sh.back.querySelector('#tnone').onclick = () => { cfg.types = ['flashcard']; saveCfg(m.code, cfg); draw(); };
+    sh.back.querySelector('#tnone').onclick = () => { cfg.types = []; saveCfg(m.code, cfg); draw(); };
     q('[data-n]').forEach((b) => b.onclick = () => { cfg.n = b.dataset.n === 'tout' ? 'tout' : Number(b.dataset.n); saveCfg(m.code, cfg); draw(); });
     q('[data-niv]').forEach((b) => b.onclick = () => { cfg.niveau = b.dataset.niv === 'tous' ? 'tous' : Number(b.dataset.niv); saveCfg(m.code, cfg); draw(); });
     sh.back.querySelector('#chrono').onchange = (e) => { cfg.chrono = e.target.checked; saveCfg(m.code, cfg); };
