@@ -10,7 +10,7 @@ import * as S from './store.js';
 import { today, isDue, dueDate, nextState, mastery, notionStats, seenCount, prioritize, shuffle, streak, INTERVALS } from './leitner.js';
 import { TYPES, TYPE_KEYS, NIVEAUX, typeLabel, timeFor, formatOf, checkCourte, sameSet, resolveVariants } from './types.js';
 
-const VERSION = '2.6.1';
+const VERSION = '2.6.2';
 const $app = document.getElementById('app');
 const $tab = document.getElementById('tabbar');
 const $halos = document.getElementById('halos');
@@ -488,7 +488,7 @@ function openSheet(html, cls = '') {
   const back = document.createElement('div');
   back.className = 'sheet-back';
   back.innerHTML = `<div class="sheet ${cls}" role="dialog" aria-modal="true">${html}</div>`;
-  lockScroll();
+  lockScroll(); son('sheet');
   const close = () => { back.remove(); unlockScroll(); };
   back.onclick = (e) => { if (e.target === back) close(); };
   document.body.appendChild(back);
@@ -1254,7 +1254,7 @@ async function viewProfil() {
       try {
         if (!file.name.toLowerCase().endsWith('.json')) throw new Error('Ce n\u2019est pas un fichier .json.');
         const data = JSON.parse(await file.text());
-        const info = await S.importContenu(data);
+        const info = await S.importContenu(data); son('ok');
         out.insertAdjacentHTML('beforeend', `<div class="feedback ok"><b>${esc(info.code)} importé !</b>${plural(info.nbChapitres, 'chapitre')}, ${plural(info.nbElements, 'élément')}. <a href="#/matiere/${encodeURIComponent(info.code)}">Voir ${esc(info.code)}</a></div>`);
       } catch (er) {
         const msg = er instanceof SyntaxError ? 'Le fichier est abîmé ou incomplet.' : er.message;
@@ -1305,6 +1305,24 @@ onAuthStateChanged(auth, async (user) => {
 
 // Évite que le navigateur ouvre un fichier lâché à côté de la zone de dépôt.
 ['dragover', 'drop'].forEach((ev) => window.addEventListener(ev, (e) => { if (!e.target.closest?.('#drop')) e.preventDefault(); }));
+
+/* ================= Sons de l'interface ================= */
+// Le quiz a ses propres sons (bonne réponse, erreur…) ; ici, un retour discret sur le reste de l'appli.
+const QUIZ = '.q, .stage, [data-tri], [data-i], [data-vf], [data-left], [data-right], [data-up], [data-down], #val, #skip, #yes, #no, #half, #pause, #resumeP, #card, label.switch, input';
+document.addEventListener('click', (e) => {
+  const el = e.target.closest('button, a, [data-stroop]');
+  if (!el || el.disabled || el.closest(QUIZ) || el.matches(QUIZ)) return;
+  if (el.matches('[data-stroop]')) return son('stroop');
+  if (el.closest('.tabbar')) return son('tab');
+  if (el.classList.contains('cta')) return son('go');
+  if (el.matches('[data-chap], [data-partie], #all')) return son('check');
+  if (el.matches('[data-close]')) return;
+  son('nav');
+}, true);
+document.addEventListener('change', (e) => {
+  const el = e.target;
+  if (el.matches?.('input[type=checkbox]') && el.id !== 'sonOn' && !el.closest('.q')) son(el.checked ? 'on' : 'off');
+}, true);
 
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));

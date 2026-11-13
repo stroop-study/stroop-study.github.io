@@ -397,3 +397,8 @@ details.notions .nnom{flex:1;font-size:14.5px}
 .sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
 .tseg button.segok{background:var(--okS)!important;color:#0B2A1A!important;opacity:1}
 .tseg button.segko{background:var(--koS)!important;color:#fff!important;opacity:1;text-decoration:line-through}
+
+/* Barre d'état de l'iPhone (appli installée) : le fond de l'appli passe dessous, texte blanc.
+   En thème sombre, c'est fondu ; en thème clair, une bande foncée garde l'heure lisible. */
+body::before{content:'';position:fixed;top:0;left:0;right:0;height:env(safe-area-inset-top);z-index:50;pointer-events:none;background:transparent}
+[data-theme="clair"] body::before{background:#1B1E2E}

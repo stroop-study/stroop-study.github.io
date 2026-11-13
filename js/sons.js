@@ -58,7 +58,16 @@ const SONS = {
   end: () => { [523, 659, 784].forEach((f, i) => tone(f, i * 0.11, 0.2, { gain: 0.18 })); [523, 659, 784, 1047].forEach((f) => tone(f, 0.38, 0.6, { gain: 0.1 })); },
   sport: () => { [392, 494, 587, 784].forEach((f) => tone(f, 0, 0.5, { type: 'triangle', gain: 0.09 })); tone(1175, 0.15, 0.35, { gain: 0.1 }); },
   pause: () => { tone(784, 0, 0.12, { gain: 0.15 }); tone(587, 0.1, 0.18, { gain: 0.15 }); },
-  reprise: () => { tone(587, 0, 0.12, { gain: 0.15 }); tone(784, 0.1, 0.18, { gain: 0.15 }); }
+  reprise: () => { tone(587, 0, 0.12, { gain: 0.15 }); tone(784, 0.1, 0.18, { gain: 0.15 }); },
+  // Navigation et interface (plus discrets que les sons du quiz)
+  nav: () => tone(660, 0, 0.06, { gain: 0.06 }),
+  tab: () => { tone(740, 0, 0.06, { gain: 0.06 }); tone(988, 0.04, 0.07, { gain: 0.05 }); },
+  go: () => { tone(523, 0, 0.12, { gain: 0.14 }); tone(784, 0.07, 0.18, { gain: 0.14 }); },
+  check: () => tone(1047, 0, 0.07, { gain: 0.07 }),
+  on: () => { tone(660, 0, 0.07, { gain: 0.1 }); tone(880, 0.05, 0.09, { gain: 0.1 }); },
+  off: () => { tone(880, 0, 0.07, { gain: 0.08 }); tone(660, 0.05, 0.09, { gain: 0.08 }); },
+  sheet: () => { souffle(0, 0.16, 0.04, 900); tone(523, 0, 0.14, { gain: 0.04, glide: 160, attack: 0.04 }); },
+  stroop: () => { tone(420, 0, 0.14, { gain: 0.16, glide: 520, attack: 0.01 }); tone(700, 0.12, 0.16, { gain: 0.12, glide: 400 }); }
 };
 
 export function son(nom) {
