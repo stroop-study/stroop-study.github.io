@@ -10,7 +10,7 @@ import * as S from './store.js';
 import { today, isDue, dueDate, nextState, mastery, notionStats, seenCount, prioritize, shuffle, streak, INTERVALS } from './leitner.js';
 import { TYPES, TYPE_KEYS, NIVEAUX, typeLabel, timeFor, formatOf, checkCourte, sameSet, resolveVariants } from './types.js';
 
-const VERSION = '2.7.1';
+const VERSION = '2.7.2';
 const $app = document.getElementById('app');
 const $tab = document.getElementById('tabbar');
 const $halos = document.getElementById('halos');
@@ -642,7 +642,7 @@ async function startSession({ code, chapitres = null, kind = 'normal', ids = nul
   else if (kind === 'erreurs') items = shuffle(items.filter((it) => prog[it.id]?.err));
   else {
     items = items.filter((it) => matchCfg(it, cfg));
-    if (kind === 'rafale') items = shuffle(items);
+    if (kind === 'rafale') items = prioritize(items, prog);
     else items = prioritize(items, prog).slice(0, cfg.n === 'tout' ? items.length : cfg.n);
   }
   if (!items.length) return toast('Rien à réviser avec ces réglages');
@@ -678,7 +678,7 @@ async function viewSession() {
   };
   if (session.kind === 'rafale' && Date.now() >= session.endsAt) return finish();
   if (session.i >= session.ids.length) {
-    if (session.kind === 'rafale') session.ids = session.ids.concat(shuffle(session.base || session.ids));
+    if (session.kind === 'rafale') session.ids = session.ids.concat(prioritize((session.base || session.ids).map((id) => ({ id })), prog).map((x) => x.id));
     else return finish();
   }
   if (!byId[session.ids[session.i]]) { session.i++; return viewSession(); }

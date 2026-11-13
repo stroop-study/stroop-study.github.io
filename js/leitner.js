@@ -108,12 +108,26 @@ export function seenCount(ids, prog) {
  * Ordonne les éléments pour une session : d'abord ceux à revoir (boîtes basses en premier),
  * puis les jamais vus, puis le reste. Un peu de hasard à priorité égale.
  */
+/** La carte peut-elle monter de boîte aujourd'hui ? (à revoir aujourd'hui, ou 2e montée du jour possible) */
+export function canClimb(p, now = Date.now()) {
+  if (!p || !p.box) return false;
+  if (isDue(p, now)) return true;
+  return p.box === 1 && p.newUp && p.up && startOfDay(p.up) === startOfDay(now) && now - p.up >= SAME_DAY_GAP;
+}
+
+/**
+ * Ordonne les éléments pour une session :
+ * 1. ceux qui peuvent monter de boîte aujourd'hui (boîtes basses d'abord),
+ * 2. les jamais vus,
+ * 3. le reste (déjà vus, qui ne peuvent pas monter aujourd'hui : simple entraînement), les moins sûrs d'abord.
+ * Un peu de hasard à priorité égale.
+ */
 export function prioritize(items, prog, now = Date.now()) {
   const score = (it) => {
     const p = prog[it.id];
-    if (p && p.box && isDue(p, now)) return 0 + p.box / 10;
+    if (canClimb(p, now)) return p.box / 10;
     if (!p || !p.box) return 1;
-    return 2 + p.box / 10;
+    return 2 + p.box / 10 + (p.err ? -0.05 : 0);
   };
   return items
     .map((it) => ({ it, s: score(it) + Math.random() * 0.05 }))
