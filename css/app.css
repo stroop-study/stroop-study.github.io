@@ -209,7 +209,7 @@ input,textarea,select{font:inherit;color:var(--ink)}
 
 /* ===== Fenêtres ===== */
 .sheet-back{position:fixed;inset:0;z-index:20;background:rgba(10,12,24,.45);display:flex;align-items:flex-end;justify-content:center}
-.sheet{background:var(--bg);width:100%;max-width:560px;border-radius:28px 28px 0 0;padding:20px 20px calc(env(safe-area-inset-bottom) + 20px);display:flex;flex-direction:column;gap:14px;max-height:88vh;overflow:auto}
+.sheet{background:var(--bg);width:100%;max-width:560px;border-radius:28px 28px 0 0;padding:20px 20px calc(env(safe-area-inset-bottom) + 20px);display:flex;flex-direction:column;gap:14px;max-height:88%;overflow:auto}
 .toast{position:fixed;left:50%;bottom:calc(env(safe-area-inset-bottom) + 92px);transform:translateX(-50%);z-index:30;background:var(--cta);color:var(--ctaInk);padding:10px 18px;border-radius:999px;font-weight:800;font-size:14px;box-shadow:var(--shadow);max-width:90vw;text-align:center}
 
 /* ===== Dépôt de fichiers ===== */
@@ -424,3 +424,4 @@ body::before{content:'';position:fixed;top:0;left:0;right:0;height:env(safe-area
 [data-theme="sombre"] .seg:not(.tseg) button[aria-pressed="true"]{background:var(--m-acc,#F3EADF)}
 
 .vtag{flex:none;font-weight:800;font-size:13px;padding:4px 10px;border-radius:999px;background:var(--ghost);color:var(--ink)}
+.btn .nb{font-size:12px;font-weight:800;padding:2px 7px;border-radius:999px;background:rgba(0,0,0,.08);margin-left:2px}

@@ -10,7 +10,7 @@ import * as S from './store.js';
 import { today, isDue, dueDate, nextState, mastery, notionStats, seenCount, prioritize, shuffle, streak, INTERVALS } from './leitner.js';
 import { TYPES, TYPE_KEYS, NIVEAUX, typeLabel, timeFor, formatOf, checkCourte, sameSet, resolveVariants } from './types.js';
 
-const VERSION = '2.7.5';
+const VERSION = '2.8.0';
 const $app = document.getElementById('app');
 const $tab = document.getElementById('tabbar');
 const $halos = document.getElementById('halos');
@@ -44,7 +44,8 @@ const IC = {
   books: '<path d="M5 4h4v16H5zM10 4h4v16h-4zM15.5 5l3.5-1 2.5 15-3.5 1z"/>',
   paw: '<g fill="currentColor" stroke="none"><ellipse cx="12" cy="15.6" rx="4.6" ry="3.9"/><ellipse cx="6.2" cy="10.4" rx="1.9" ry="2.4"/><ellipse cx="9.6" cy="6.8" rx="1.9" ry="2.5"/><ellipse cx="14.4" cy="6.8" rx="1.9" ry="2.5"/><ellipse cx="17.8" cy="10.4" rx="1.9" ry="2.4"/></g>',
   help: '<path d="M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM9.5 9.5a2.5 2.5 0 1 1 3.5 2.3c-.6.3-1 .9-1 1.6v.6M12 17h.01"/>',
-  play: '<path d="M8 5l11 7-11 7z"/>'
+  play: '<path d="M8 5l11 7-11 7z"/>',
+  cards: '<path d="M8 4h11v14H8zM5 7v13h11"/>'
 };
 const ic = (n, cls = 'ic') => `<svg class="${cls}" viewBox="0 0 24 24" aria-hidden="true">${IC[n]}</svg>`;
 const STROOP = { dodo: 'stroop-dodo', contente: 'stroop-contente', sport: 'stroop-sport', fete: 'stroop-fete', etude: 'stroop-etude' };
@@ -199,13 +200,14 @@ async function matiereStats(m) {
   const prog = await S.getProgres(m.code);
   const items = S.flatItems(contenu);
   const ids = items.map((i) => i.id);
-  let due = 0, neufs = 0, erreurs = 0;
+  let due = 0, neufs = 0, erreurs = 0, flashDue = 0, flashTot = 0;
   for (const it of items) {
     const p = prog[it.id];
+    if (it.type === 'flashcard') { flashTot++; if (!p || !p.box || isDue(p)) flashDue++; continue; }
     if (!p || !p.box) neufs++; else if (isDue(p)) due++;
     if (p?.err) erreurs++;
   }
-  return { m, contenu, prog, items, total: items.length, due, neufs, maitrise: mastery(items, prog), erreurs, vus: seenCount(ids, prog) };
+  return { m, contenu, prog, items, total: items.length, due, neufs, flashDue, flashTot, maitrise: mastery(items, prog), erreurs, vus: seenCount(ids, prog) };
 }
 
 function nextExam(m) {
@@ -277,7 +279,7 @@ async function viewHome() {
   let bubble;
   if (!avecContenu.length) bubble = S.isAdmin() ? 'Zzz… Importe ton premier contenu dans Profil et on commence !' : 'Zzz… Le contenu n’est pas encore arrivé. Je fais une petite sieste en attendant.';
   else if (mood === 'dodo') bubble = s ? `Zzz… Ta série de ${plural(s, 'jour')} m’attend. Une carte suffit à me réveiller !` : 'Zzz… Une seule carte suffit pour me réveiller.';
-  else if (mood === 'sport') bubble = `${minutes} min de révision aujourd’hui ! Super Stroop est à fond${s > 1 ? `, et ta série monte à ${s} jours` : ''}.`;
+  else if (mood === 'sport') bubble = `${fmtMin(minutes)} de révision aujourd’hui ! Super Stroop est à fond${s > 1 ? `, et ta série monte à ${s} jours` : ''}.`;
   else bubble = todo ? 'Journée validée ! On s’en refait une petite ?' : 'Journée validée, et tout est à jour. Bravo !';
 
   const exams = all.map((x) => ({ x, e: nextExam(x.m) })).filter((o) => o.e).sort((a, b) => a.e.t - b.e.t);
@@ -296,7 +298,7 @@ async function viewHome() {
   </div>
   ${verifBanner()}
   ${weekStrip(u.jours)}
-  ${saved ? `<button class="cta" id="resume"><span><span class="t">Reprendre ma session</span><span class="s">${esc(saved.code)} · ${saved.i}/${saved.ids.length} · là où tu t’étais arrêté·e</span></span><span class="go">${ic('arrow')}</span></button>` : ''}
+  ${saved ? `<button class="cta" id="resume"><span><span class="t">Reprendre ma session</span><span class="s">${esc(saved.code)} · ${saved.results?.length || saved.i}/${saved.ids.length} · là où tu t’étais arrêté·e</span></span><span class="go">${ic('arrow')}</span></button>` : ''}
   ${best || !S.isAdmin() ?  (best ? `<button class="cta cta-m c-${best.m.couleur}" id="daily" ${todo ? '' : 'disabled'}><span><span class="t">Session du jour</span><span class="s">${todo ? `${esc(best.m.code)} · ${plural(todo, 'carte')} · environ ${Math.max(2, Math.round(todo / 2))} min` : 'Rien à revoir pour l’instant'}</span></span><span class="go">${ic('arrow')}</span></button>` : '') : `<a class="cta" href="#/profil/bibliotheque"><span><span class="t">Importer du contenu</span><span class="s">Ajoute ton premier fichier de révisions</span></span><span class="go">${ic('arrow')}</span></a>`}
   ${exams.length ? `<div class="row" style="flex-wrap:wrap">${exams.slice(0, 3).map((o) => `<span class="chip m c-${o.x.m.couleur}">${esc(o.x.m.code)} · ${daysUntil(o.e.t) === 0 ? 'aujourd’hui' : 'J-' + daysUntil(o.e.t)}</span>`).join('')}</div>` : ''}
   <div class="between"><h2 class="section-title">Mes matières</h2><span class="small muted">${esc(semestreLabel(u.semestre))}</span></div>
@@ -316,7 +318,13 @@ async function viewHome() {
     document.getElementById('btxt').textContent = lines[Math.floor(Math.random() * lines.length)];
   };
   bindVerif();
-  document.getElementById('resume')?.addEventListener('click', () => { session = saved; go('#/session'); });
+  document.getElementById('resume')?.addEventListener('click', () => {
+    session = saved;
+    // la dernière question affichée avait déjà reçu une réponse : on reprend à la suivante
+    const last = session.results[session.results.length - 1];
+    if (last && last.id === session.ids[session.i]) session.i++;
+    go('#/session');
+  });
   document.getElementById('daily')?.addEventListener('click', () => startSession({ code: best.m.code, kind: 'jour' }));
   if (N.proposer(u)) setTimeout(() => { if (location.hash === '' || location.hash === '#/') inviteNotif(); }, 900);
 }
@@ -349,13 +357,14 @@ function getCfg(code) {
   try { c = JSON.parse(localStorage.getItem(CFG_KEY(code)) || 'null'); } catch { c = null; }
   c = c || {};
   return {
-    types: Array.isArray(c.types) ? c.types.filter((t) => TYPE_KEYS.includes(t)) : TYPE_KEYS.slice(),
+    // depuis la 2.8, les flashcards ont leur propre mode : décochées par défaut dans les quiz
+    types: Array.isArray(c.types) ? c.types.filter((t) => TYPE_KEYS.includes(t) && (c.v >= 3 || t !== 'flashcard')) : TYPE_KEYS.filter((t) => t !== 'flashcard'),
     n: c.n ?? 20,
     niveau: c.niveau ?? 'tous',
-    chrono: c.v === 2 ? !!c.chrono : true
+    chrono: c.v >= 2 ? !!c.chrono : true
   };
 }
-const saveCfg = (code, cfg) => localStorage.setItem(CFG_KEY(code), JSON.stringify({ ...cfg, v: 2 }));
+const saveCfg = (code, cfg) => localStorage.setItem(CFG_KEY(code), JSON.stringify({ ...cfg, v: 3 }));
 const matchCfg = (it, cfg) => cfg.types.includes(it.type) && (cfg.niveau === 'tous' || (it.niveau || 1) === Number(cfg.niveau));
 function cfgSummary(cfg) {
   const t = cfg.types.length === TYPE_KEYS.length ? 'tous les types' : plural(cfg.types.length, 'type');
@@ -384,7 +393,9 @@ async function viewMatiere(code) {
   const render = () => {
     const cfg = getCfg(code);
     const selItems = x.items.filter((it) => st.sel.has(it.chapitre) && matchCfg(it, cfg));
-    const errItems = x.items.filter((it) => st.sel.has(it.chapitre) && x.prog[it.id]?.err);
+    const errItems = x.items.filter((it) => st.sel.has(it.chapitre) && x.prog[it.id]?.err && it.type !== 'flashcard');
+    const flashItems = x.items.filter((it) => it.type === 'flashcard' && (!st.sel.size || st.sel.has(it.chapitre)));
+    const flashDue = flashItems.filter((it) => { const p = x.prog[it.id]; return !p || !p.box || isDue(p); }).length;
     const all = chaps.every((c) => st.sel.has(c.id));
     const ex = nextExam(m);
     const nb = cfg.n === 'tout' ? selItems.length : Math.min(cfg.n, selItems.length);
@@ -424,8 +435,9 @@ async function viewMatiere(code) {
         <button class="cta cta-m" id="go" ${selItems.length ? '' : 'disabled'}><span><span class="t">Lancer la session</span><span class="s">${st.sel.size ? (selItems.length ? `${plural(st.sel.size, 'chapitre')} · ${plural(nb, 'question')}` : 'Aucune question avec ces réglages') : 'Coche au moins un chapitre'}</span></span><span class="go">${ic('arrow')}</span></button>
         <div class="two">
           <button class="btn soft" id="rafale" ${selItems.length ? '' : 'disabled'}>${ic('bolt')}Rafale 2 min</button>
-          <button class="btn plain" id="err" ${errItems.length ? '' : 'disabled'}>${ic('redo')}Mes erreurs · ${errItems.length}</button>
+          <button class="btn soft" id="flash" style="white-space:nowrap" ${flashItems.length ? '' : 'disabled'}>${ic('cards')}Flashcards${flashItems.length ? ` <span class="nb">${flashDue || flashItems.length}</span>` : ''}</button>
         </div>
+        <button class="btn plain block" id="err" ${errItems.length ? '' : 'disabled'}>${ic('redo')}Mes erreurs · ${errItems.length}</button>
       </div>
     </div>`;
     $app.querySelectorAll('[data-chap]').forEach((b) => b.onclick = () => { const id = b.dataset.chap; st.sel.has(id) ? st.sel.delete(id) : st.sel.add(id); render(); });
@@ -440,6 +452,7 @@ async function viewMatiere(code) {
     document.getElementById('go').onclick = () => startSession({ ...opts, kind: 'normal' });
     document.getElementById('rafale').onclick = () => startSession({ ...opts, kind: 'rafale' });
     document.getElementById('err').onclick = () => startSession({ ...opts, kind: 'erreurs' });
+    document.getElementById('flash').onclick = () => startSession({ ...opts, chapitres: st.sel.size ? opts.chapitres : null, kind: 'flash' });
     document.getElementById('gear').onclick = () => matiereSheet(m, render);
   };
   render();
@@ -494,7 +507,18 @@ function openSheet(html, cls = '') {
   back.className = 'sheet-back';
   back.innerHTML = `<div class="sheet ${cls}" role="dialog" aria-modal="true">${html}</div>`;
   lockScroll(); son('sheet');
-  const close = () => { back.remove(); unlockScroll(); };
+  // Clavier iOS : il ne réduit pas la page, il la recouvre. On cale la fenêtre sur la zone
+  // réellement visible (visualViewport) pour que le champ de saisie reste au-dessus du clavier.
+  const vv = window.visualViewport;
+  const fit = () => {
+    if (!vv) return;
+    back.style.top = vv.offsetTop + 'px'; back.style.height = vv.height + 'px'; back.style.bottom = 'auto';
+    const f = document.activeElement;
+    if (f && back.contains(f) && /^(TEXTAREA|INPUT)$/.test(f.tagName)) f.scrollIntoView({ block: 'center' });
+  };
+  if (vv) { vv.addEventListener('resize', fit); vv.addEventListener('scroll', fit); }
+  back.addEventListener('focusin', () => setTimeout(fit, 300));
+  const close = () => { back.remove(); unlockScroll(); if (vv) { vv.removeEventListener('resize', fit); vv.removeEventListener('scroll', fit); } };
   back.onclick = (e) => { if (e.target === back) close(); };
   document.body.appendChild(back);
   back.querySelectorAll('[data-close]').forEach((b) => b.onclick = close);
@@ -638,8 +662,9 @@ async function startSession({ code, chapitres = null, kind = 'normal', ids = nul
   let items = S.flatItems(contenu);
   if (chapitres && chapitres.length) items = items.filter((it) => chapitres.includes(it.chapitre));
   if (ids) items = shuffle(items.filter((it) => ids.includes(it.id)));
-  else if (kind === 'jour') items = prioritize(items.filter((it) => isDue(prog[it.id])), prog).slice(0, 12);
-  else if (kind === 'erreurs') items = shuffle(items.filter((it) => prog[it.id]?.err));
+  else if (kind === 'jour') items = prioritize(items.filter((it) => it.type !== 'flashcard' && isDue(prog[it.id])), prog).slice(0, 12);
+  else if (kind === 'flash') items = prioritize(items.filter((it) => it.type === 'flashcard'), prog).slice(0, 20);
+  else if (kind === 'erreurs') items = shuffle(items.filter((it) => prog[it.id]?.err && it.type !== 'flashcard'));
   else {
     items = items.filter((it) => matchCfg(it, cfg));
     if (kind === 'rafale') items = prioritize(items, prog);
@@ -651,7 +676,7 @@ async function startSession({ code, chapitres = null, kind = 'normal', ids = nul
   session = {
     code, kind, ids: items.map((i) => i.id), base: items.map((i) => i.id), i: 0, started: Date.now(),
     endsAt: kind === 'rafale' ? Date.now() + 120000 : null,
-    chrono: !!cfg.chrono && kind !== 'rafale',
+    chrono: !!cfg.chrono && kind !== 'rafale' && kind !== 'flash',
     results: [], score: 0, m0: mastery(all, prog)
   };
   saveSession();
@@ -787,7 +812,7 @@ async function viewSession() {
         <div class="stage"><span class="ghost-card" aria-hidden="true"></span>
           <button class="fcard" id="card" aria-label="${st.flipped ? 'Réponse' : 'Retourner la carte'}">
             <span class="swipe-tag no" id="tno">À revoir</span><span class="swipe-tag yes" id="tyes">Je sais</span>
-            <span class="lab">${st.flipped ? 'Réponse' : 'Définis'}</span>
+            <span class="lab">${st.flipped ? 'Réponse' : /\?\s*$/.test(it.recto || '') ? 'Question' : 'Définis'}</span>
             <span class="body">${st.flipped ? `<span class="verso">${esc(it.verso)}</span>${figureHtml(it.figureVerso)}` : `<span class="recto">${esc(it.recto)}</span>${figureHtml(it.figure)}`}</span>
             <span class="hint">${ic('flip')}${st.flipped ? 'Glisse à droite si tu savais, à gauche sinon' : 'Touche pour retourner'}</span>
           </button>
@@ -987,6 +1012,8 @@ function fmtDue(t) {
   if (days === 1) return 'demain';
   return 'le ' + new Date(t).toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' });
 }
+/** 45 → « 45 min » ; 62 → « 1 h 02 » ; 120 → « 2 h ». */
+const fmtMin = (m) => { m = Math.round(m); if (m < 60) return `${m} min`; const h = Math.floor(m / 60), r = m % 60; return r ? `${h} h ${String(r).padStart(2, '0')}` : `${h} h`; };
 const fmtTime = (ms) => { const s = Math.max(0, Math.ceil(ms / 1000)); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`; };
 const shortChap = (t) => (t || '').split(' · ')[0];
 
@@ -1036,7 +1063,7 @@ function viewRecap() {
   const up = r.results.filter((x) => x.correct && x.after > x.before).length; const down = r.results.filter((x) => x.after < x.before).length;
   const practice = r.results.filter((x) => x.practice).length;
   const errs = [...new Set(r.results.filter((x) => !x.correct).map((x) => x.id))];
-  const titles = { jour: 'Session du jour terminée !', rafale: 'Fin de la rafale !', erreurs: 'Erreurs revues !', normal: 'Session terminée !' };
+  const titles = { flash: 'Flashcards terminées !', jour: 'Session du jour terminée !', rafale: 'Fin de la rafale !', erreurs: 'Erreurs revues !', normal: 'Session terminée !' };
   const gain = (r.m1 ?? 0) - (r.m0 ?? 0);
   $app.innerHTML = `<section class="recap c-${r.matiere.couleur}">
     <div class="stroop-zone"><div class="bubble"><span class="who">Stroop</span>${n ? (ok / n >= 0.8 ? 'Wahou, quelle forme ! Je fais la fête.' : ok / n >= 0.5 ? 'Beau travail, ça rentre !' : 'Chaque erreur d’aujourd’hui, c’est une réussite de demain.') : 'On se refait ça bientôt ?'}</div>${stroopImg(n && ok / n < 0.5 ? 'etude' : 'fete')}</div>
@@ -1131,7 +1158,7 @@ async function viewProgres() {
     <ul class="list" style="list-style:none;margin:0;padding:0;gap:12px">
       <li><b>Série actuelle : ${plural(s, 'jour')}</b><br><span class="small muted">${s ? `Tu révises chaque jour depuis le ${fmtD(runStart)}. Une réponse dans la journée suffit à la prolonger.` : 'Réponds à une question aujourd’hui pour lancer une série.'}</span></li>
       <li><b>Meilleure série : ${plural(best, 'jour')}</b><br><span class="small muted">${best && bestStart ? (best > 1 ? `Ton record de jours de révision d’affilée, du ${fmtD(bestStart)} au ${fmtD(bestEnd)}.` : `Ton record de jours de révision d’affilée (le ${fmtD(bestEnd)}).`) : 'Pas encore de série.'}</span></li>
-      <li><b>${plural(totalRep, 'réponse')}</b><br><span class="small muted">Sur ${plural(joursTravailles, 'jour')} de révision${totalMin ? `, pour environ ${totalMin} min de révision depuis le 13 novembre` : ''}.</span></li>
+      <li><b>${plural(totalRep, 'réponse')}</b><br><span class="small muted">Sur ${plural(joursTravailles, 'jour')} de révision${totalMin ? `, pour environ ${fmtMin(totalMin)} de révision depuis le 13 novembre` : ''}.</span></li>
     </ul>
     <button class="btn primary block" data-close>OK</button>`));
 }
@@ -1211,9 +1238,10 @@ async function viewProfil(section) {
   const u = S.getUser();
   const theme = localStorage.getItem('theme') || 'auto';
   const flags = await S.allFlags();
+  const flagsInv = S.isAdmin() ? await S.flagsInvites() : [];
   const card = (html) => `<div class="card" style="padding:16px;display:flex;flex-direction:column;gap:12px">${html}</div>`;
   const etatRappels = { actif: 'Activés', inactif: 'Désactivés', bientot: 'Bientôt', installer: 'À installer', impossible: 'Indisponibles', refuse: 'Bloqués' }[N.etat()];
-  const badge = { rappels: etatRappels, signalements: flags.length ? String(flags.length) : '', affichage: getSons().on ? '' : 'Sons coupés' };
+  const badge = { rappels: etatRappels, signalements: (flags.length + (flagsInv?.length || 0)) ? String(flags.length + (flagsInv?.length || 0)) : '', affichage: getSons().on ? '' : 'Sons coupés' };
   const SEC = {
     compte: card(`
       <label class="field">Prénom<input id="prenom" value="${esc(u.prenom || '')}" autocomplete="given-name"></label>
@@ -1241,8 +1269,9 @@ async function viewProfil(section) {
       <div class="list">${(S.getAcces()?.membres || []).map((e) => `<div class="between"><span>${esc(e)}</span><button class="flag-btn" data-rm="${esc(e)}">Retirer</button></div>`).join('')}</div>
       <form id="inv" class="row"><label class="sr" for="invmail">Adresse e-mail</label><input id="invmail" type="email" placeholder="adresse@gmail.com" style="flex:1;border:2px solid var(--line);background:var(--card);border-radius:14px;padding:12px 14px;font-size:16px;min-width:0"><button class="btn primary" type="submit">Inviter</button></form>`)
       : card(`<p class="muted small" style="margin:0">${S.libOk() ? 'Tu as accès au contenu commun. Ta progression n’appartient qu’à toi.' : `Tu n’as pas encore accès au contenu commun. Donne cette adresse à l’admin : <b>${esc(auth.currentUser?.email || '')}</b>`}</p>`),
-    signalements: card(`${flags.length ? `<div class="list">${flags.map((f) => `<div class="between" style="align-items:flex-start"><div><b class="small">${esc(f.matiere)} · ${esc(f.item.id)}</b><div class="small muted">${esc(itemLabel(f.item))}</div>${f.flag.note ? `<div class="small">« ${esc(f.flag.note)} »</div>` : ''}</div><button class="flag-btn" data-unflag="${esc(f.matiere)}|${esc(f.item.id)}">Retirer</button></div>`).join('')}</div>
-      <button class="btn plain block" id="copyflags">${ic('copy')}Copier pour Claude</button>` : '<p class="muted small" style="margin:0">Aucun signalement. Pendant une session, touche « Signaler » sous une question qui te semble fausse ou mal posée.</p>'}`),
+    signalements: card(`<h2 class="section-title">Mes signalements</h2>${flags.length ? `<div class="list">${flags.map((f) => `<div class="between" style="align-items:flex-start"><div><b class="small">${esc(f.matiere)} · ${esc(f.item.id)}</b><div class="small muted">${esc(itemLabel(f.item))}</div>${f.flag.note ? `<div class="small">« ${esc(f.flag.note)} »</div>` : ''}</div><button class="flag-btn" data-unflag="${esc(f.matiere)}|${esc(f.item.id)}">Retirer</button></div>`).join('')}</div>` : '<p class="muted small" style="margin:0">Aucun signalement. Pendant une session, touche « Signaler » sous une question qui te semble fausse ou mal posée.</p>'}`)
+      + (S.isAdmin() ? card(`<h2 class="section-title">Signalements des invité·es</h2>${flagsInv === null ? `<p class="muted small" style="margin:0">Pour les voir, mets à jour les règles Firebase une fois : copie-les, puis colle-les dans Firebase (<b>Firestore → Règles</b>) et clique sur <b>Publier</b>.</p><button class="btn plain block" id="copyrules">${ic('copy')}Copier les règles</button>` : flagsInv.length ? `<div class="list">${flagsInv.map((f) => `<div class="between" style="align-items:flex-start"><div><b class="small">${esc(f.code)} · ${esc(f.item)}</b> <span class="small muted">par ${esc(f.prenom || f.email || 'un·e invité·e')}</span><div class="small muted">${esc(f.it ? itemLabel(f.it) : 'Question introuvable dans le contenu actuel')}</div>${f.note ? `<div class="small">« ${esc(f.note)} »</div>` : ''}</div><button class="flag-btn" data-unflaginv="${esc(f.sid)}">Retirer</button></div>`).join('')}</div>` : '<p class="muted small" style="margin:0">Aucun signalement de tes invité·es pour l’instant.</p>'}`) : '')
+      + ((flags.length || flagsInv?.length) ? `<button class="btn plain block" id="copyflags">${ic('copy')}Copier tout pour Claude</button>` : ''),
     aide: `<button class="card cfg-card" id="tutoP"><span><b>Comment fonctionne la boîte de Leitner ?</b><span class="small muted" style="display:block">Le petit tuto des 5 boîtes</span></span>${ic('next')}</button>
       ${card(`<b>Et la maîtrise ?</b><p class="muted small" style="margin:0">Dans chaque matière, touche le cercle de maîtrise pour voir comment elle se calcule et la liste de tes notions.</p>`)}
       <p class="muted small" style="margin:0;text-align:center">Stroop Study · version ${VERSION}</p>`,
@@ -1299,9 +1328,14 @@ async function viewProfil(section) {
     ['dragleave', 'dragend'].forEach((ev) => drop.addEventListener(ev, () => drop.classList.remove('over')));
     drop.addEventListener('drop', async (e) => { e.preventDefault(); drop.classList.remove('over'); await importFiles([...(e.dataTransfer?.files || [])]); });
   }
+  $app.querySelectorAll('[data-unflaginv]').forEach((b) => b.onclick = async () => { await S.retirerFlagInvite(b.dataset.unflaginv); viewProfil(section); });
+  document.getElementById('copyrules')?.addEventListener('click', async () => {
+    try { const r = (await (await fetch('firestore.rules', { cache: 'no-store' })).text()).split('ADMIN_UID').join(auth.currentUser.uid); await navigator.clipboard.writeText(r); toast('Règles copiées ! Colle-les dans Firebase'); } catch { toast('Copie impossible sur cet appareil'); }
+  });
   $app.querySelectorAll('[data-unflag]').forEach((b) => b.onclick = async () => { const [c, id] = b.dataset.unflag.split('|'); await S.unflagItem(c, id); viewProfil(section); });
   document.getElementById('copyflags')?.addEventListener('click', async () => {
-    const txt = 'Signalements de mon appli de révisions :\n\n' + flags.map((f) => `- ${f.matiere} · ${f.item.id} · « ${itemLabel(f.item)} »${f.flag.note ? ` → ${f.flag.note}` : ''}`).join('\n');
+    const txt = 'Signalements de mon appli de révisions :\n\n' + flags.map((f) => `- ${f.matiere} · ${f.item.id} · « ${itemLabel(f.item)} »${f.flag.note ? ` → ${f.flag.note}` : ''}`).join('\n')
+      + ((flagsInv || []).length ? '\n\nSignalements de mes invité·es :\n\n' + flagsInv.map((f) => `- ${f.code} · ${f.item}${f.it ? ` · « ${itemLabel(f.it)} »` : ''} (${f.prenom || f.email || 'invité·e'})${f.note ? ` → ${f.note}` : ''}`).join('\n') : '');
     try { await navigator.clipboard.writeText(txt); toast('Copié ! Colle-le dans ta conversation avec Claude'); } catch { toast('Copie impossible sur cet appareil'); }
   });
   const tutoP = document.getElementById('tutoP'); if (tutoP) tutoP.onclick = () => leitnerTuto(null);

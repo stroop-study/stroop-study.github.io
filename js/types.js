@@ -26,9 +26,10 @@ export function timeFor(it) {
   else if (f === 'tri') t += 5 * (it.items?.length || 0);
   else if (f === 'ordre') t += 5 * (it.items?.length || 0);
   else if (f === 'qcm') t += 10;
+  if (it.type === 'cas') t += 10; // lire la situation avant la question
   const txt = [it.scenario, it.question, it.affirmation, ...(it.choix || []), ...(it.items || []).map((x) => (Array.isArray(x) ? x[0] : x)), ...(it.paires || []).flat()]
     .filter((x) => typeof x === 'string').join(' ');
-  t += Math.max(0, txt.length - 150) / 15; // ≈ temps de lecture
+  t += Math.max(0, txt.length - 100) / 12; // ≈ temps de lecture (≈ 12 caractères/s, sans se presser)
   return Math.min(180, Math.ceil(t / 5) * 5);
 }
 
@@ -36,7 +37,7 @@ export function timeFor(it) {
 export function resolveVariants(it) {
   // Un seul tirage par question : les variantes de même rang vont ensemble
   // (scénario n°2 ↔ choix n°2), ce qui permet de varier la situation ET les réponses.
-  const champs = ['question', 'affirmation', 'scenario', 'recto', 'verso'];
+  const champs = ['question', 'affirmation', 'scenario', 'recto', 'verso', 'explication'];
   const tailles = [...champs.map((k) => it[k]), ...(Array.isArray(it.choix) ? it.choix : [])].filter(Array.isArray).map((v) => v.length);
   const n = tailles.length ? Math.max(...tailles) : 1, idx = Math.floor(Math.random() * n);
   const pick = (v) => (Array.isArray(v) ? v[idx % v.length] : v);
@@ -73,11 +74,13 @@ function lev(a, b) {
 }
 
 /** Réponse courte : tolère les accents, la casse et une petite faute de frappe. */
+const sansArticle = (s) => s.replace(/^(le|la|les|l|un|une|des|du) /, '');
+
 export function checkCourte(input, reponses) {
-  const x = normalize(input);
+  const x = sansArticle(normalize(input));
   if (!x) return false;
   return (reponses || []).some((r) => {
-    const y = normalize(r);
+    const y = sansArticle(normalize(r));
     if (x === y) return true;
     const tol = y.length >= 12 ? 2 : y.length >= 5 ? 1 : 0;
     return lev(x, y) <= tol;

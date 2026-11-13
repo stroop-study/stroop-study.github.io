@@ -180,17 +180,43 @@ export async function recordAnswer(code, id, newState, { countDay = true } = {})
   setDoc(userRef(), { jours: { [j]: state.user.jours[j] } }, { merge: true }).catch(console.error);
 }
 
+// Signalements partagés : chaque signalement est aussi copié dans /signalements pour que l'admin
+// voie ceux de ses invité·es. Si les règles Firebase ne sont pas encore à jour, la copie échoue
+// sans bloquer le signalement personnel.
+const sigRef = (uid, code, id) => doc(db, 'signalements', `${uid}__${code}__${id}`.replace(/\//g, '_'));
+
 export async function flagItem(code, id, note) {
   const prog = await getProgres(code);
   const flag = { note: note || '', date: Date.now() };
   prog[id] = { ...(prog[id] || {}), flag };
   await setDoc(progresRef(code), { items: { [id]: { flag } } }, { merge: true });
+  setDoc(sigRef(state.uid, code, id), { uid: state.uid, email: state.email, prenom: state.user?.prenom || '', code, item: id, note: flag.note, date: flag.date, retire: false }).catch(() => {});
 }
 
 export async function unflagItem(code, id) {
   const prog = await getProgres(code);
   if (prog[id]) prog[id].flag = null;
   await setDoc(progresRef(code), { items: { [id]: { flag: null } } }, { merge: true });
+  setDoc(sigRef(state.uid, code, id), { retire: true }, { merge: true }).catch(() => {});
+}
+
+/** Admin : signalements des invité·es (les siens sont déjà listés via la progression). */
+export async function flagsInvites() {
+  if (!state.isAdmin) return [];
+  const res = [];
+  try {
+    const snap = await getDocs(collection(db, 'signalements'));
+    snap.forEach((d) => { const f = d.data(); if (f && !f.retire && f.uid !== state.uid) res.push({ sid: d.id, ...f }); });
+  } catch (e) { return null; } // règles pas encore mises à jour
+  for (const f of res) {
+    const contenu = await getContenu(f.code);
+    f.it = contenu ? flatItems(contenu).find((x) => x.id === f.item) || null : null;
+  }
+  return res.sort((a, b) => (b.date || 0) - (a.date || 0));
+}
+
+export async function retirerFlagInvite(sid) {
+  await setDoc(doc(db, 'signalements', sid), { retire: true }, { merge: true });
 }
 
 /** Tous les éléments d'une matière, à plat, avec leur chapitre. */
