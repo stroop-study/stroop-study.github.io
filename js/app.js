@@ -10,7 +10,7 @@ import * as S from './store.js';
 import { today, isDue, dueDate, nextState, mastery, notionStats, seenCount, prioritize, shuffle, streak, INTERVALS } from './leitner.js';
 import { TYPES, TYPE_KEYS, NIVEAUX, typeLabel, timeFor, formatOf, checkCourte, sameSet, resolveVariants } from './types.js';
 
-const VERSION = '2.6.2';
+const VERSION = '2.7.0';
 const $app = document.getElementById('app');
 const $tab = document.getElementById('tabbar');
 const $halos = document.getElementById('halos');
@@ -39,6 +39,10 @@ const IC = {
   download: '<path d="M12 4v12M7 11l5 5 5-5M5 20h14"/>',
   copy: '<path d="M9 9h10v10H9zM5 15V5h10"/>',
   pause: '<path d="M9 5v14M15 5v14" style="stroke-width:3"/>',
+  bell: '<path d="M6 16V11a6 6 0 0 1 12 0v5l1.5 2h-15zM10 20a2 2 0 0 0 4 0"/>',
+  sun: '<path d="M12 16a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>',
+  books: '<path d="M5 4h4v16H5zM10 4h4v16h-4zM15.5 5l3.5-1 2.5 15-3.5 1z"/>',
+  help: '<path d="M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM9.5 9.5a2.5 2.5 0 1 1 3.5 2.3c-.6.3-1 .9-1 1.6v.6M12 17h.01"/>',
   play: '<path d="M8 5l11 7-11 7z"/>'
 };
 const ic = (n, cls = 'ic') => `<svg class="${cls}" viewBox="0 0 24 24" aria-hidden="true">${IC[n]}</svg>`;
@@ -93,7 +97,7 @@ async function route() {
     if (page === 'session') return viewSession();
     if (page === 'recap') return viewRecap();
     if (page === 'progres') return await viewProgres();
-    if (page === 'profil') return await viewProfil();
+    if (page === 'profil') return await viewProfil(arg);
     return await viewHome();
   } catch (e) {
     console.error(e);
@@ -292,7 +296,7 @@ async function viewHome() {
   ${verifBanner()}
   ${weekStrip(u.jours)}
   ${saved ? `<button class="cta" id="resume"><span><span class="t">Reprendre ma session</span><span class="s">${esc(saved.code)} · ${saved.i}/${saved.ids.length} · là où tu t’étais arrêté·e</span></span><span class="go">${ic('arrow')}</span></button>` : ''}
-  ${best || !S.isAdmin() ?  (best ? `<button class="cta cta-m c-${best.m.couleur}" id="daily" ${todo ? '' : 'disabled'}><span><span class="t">Session du jour</span><span class="s">${todo ? `${esc(best.m.code)} · ${plural(todo, 'carte')} · environ ${Math.max(2, Math.round(todo / 2))} min` : 'Rien à revoir pour l’instant'}</span></span><span class="go">${ic('arrow')}</span></button>` : '') : `<a class="cta" href="#/profil"><span><span class="t">Importer du contenu</span><span class="s">Ajoute ton premier fichier de révisions</span></span><span class="go">${ic('arrow')}</span></a>`}
+  ${best || !S.isAdmin() ?  (best ? `<button class="cta cta-m c-${best.m.couleur}" id="daily" ${todo ? '' : 'disabled'}><span><span class="t">Session du jour</span><span class="s">${todo ? `${esc(best.m.code)} · ${plural(todo, 'carte')} · environ ${Math.max(2, Math.round(todo / 2))} min` : 'Rien à revoir pour l’instant'}</span></span><span class="go">${ic('arrow')}</span></button>` : '') : `<a class="cta" href="#/profil/bibliotheque"><span><span class="t">Importer du contenu</span><span class="s">Ajoute ton premier fichier de révisions</span></span><span class="go">${ic('arrow')}</span></a>`}
   ${exams.length ? `<div class="row" style="flex-wrap:wrap">${exams.slice(0, 3).map((o) => `<span class="chip m c-${o.x.m.couleur}">${esc(o.x.m.code)} · ${daysUntil(o.e.t) === 0 ? 'aujourd’hui' : 'J-' + daysUntil(o.e.t)}</span>`).join('')}</div>` : ''}
   <div class="between"><h2 class="section-title">Mes matières</h2><span class="small muted">${esc(semestreLabel(u.semestre))}</span></div>
   <div class="subjects">
@@ -369,7 +373,7 @@ async function viewMatiere(code) {
   const x = await matiereStats(m);
   if (!x.contenu) {
     $app.innerHTML = `${backBtn()}<div class="c-${m.couleur}"><div class="mat-head"><div><div class="code">${esc(m.code)}</div><b>${esc(m.nom)}</b></div></div></div>
-      <div class="card empty"><img class="stroop small a-dodo" src="assets/stroop/stroop-dodo.webp" alt=""><p><b>Pas encore de contenu ici.</b></p>${S.isAdmin() ? '<p class="muted small">Envoie tes supports à Claude, puis importe le fichier qu’il te donne depuis l’onglet Profil.</p><a class="btn plain" href="#/profil">Aller à l’import</a>' : '<p class="muted small">Il arrivera dès qu’il sera ajouté à la bibliothèque commune.</p>'}</div>
+      <div class="card empty"><img class="stroop small a-dodo" src="assets/stroop/stroop-dodo.webp" alt=""><p><b>Pas encore de contenu ici.</b></p>${S.isAdmin() ? '<p class="muted small">Envoie tes supports à Claude, puis importe le fichier qu’il te donne depuis l’onglet Profil.</p><a class="btn plain" href="#/profil/bibliotheque">Aller à l’import</a>' : '<p class="muted small">Il arrivera dès qu’il sera ajouté à la bibliothèque commune.</p>'}</div>
       ${examBlock(m)}`;
     bindExam(m);
     return;
@@ -1143,7 +1147,7 @@ function notifCard() {
   }[e];
   const on = e === 'actif';
   return `<div class="card" style="padding:16px;display:flex;flex-direction:column;gap:12px">
-    <div class="between"><h2 class="section-title">Rappels</h2>${msg ? '' : `<label class="switch"><input type="checkbox" id="notifOn" ${on ? 'checked' : ''}><span></span><b class="sr">Activer les rappels</b></label>`}</div>
+    <div class="between"><h2 class="section-title">Activer les rappels</h2>${msg ? '' : `<label class="switch"><input type="checkbox" id="notifOn" ${on ? 'checked' : ''}><span></span><b class="sr">Activer les rappels</b></label>`}</div>
     ${msg ? `<p class="muted small" style="margin:0">${msg}</p>` : `
     <p class="muted small" style="margin:0">Jamais plus de 2 par jour, et seulement si tu n’as pas encore révisé.</p>
     <div class="list" style="gap:10px;${on ? '' : 'opacity:.5;pointer-events:none'}">
@@ -1160,7 +1164,7 @@ function bindNotifCard() {
       if (t.checked) { const ok = await N.activer(); toast(ok ? 'Rappels activés' : 'Rappels non autorisés'); }
       else { await N.desactiver(); toast('Rappels désactivés'); }
     } catch (e) { console.error(e); toast('Impossible d’activer les rappels pour l’instant'); }
-    viewProfil();
+    viewProfil('rappels');
   };
   $app.querySelectorAll('[data-np]').forEach((c) => c.onchange = () => S.saveNotif({ [c.dataset.np]: c.checked }));
   const nh = document.getElementById('nh'); if (nh) nh.onchange = () => S.saveNotif({ heure: nh.value || '09:30' }).then(() => toast('Heure enregistrée'));
@@ -1184,24 +1188,35 @@ function inviteNotif() {
 }
 
 /* ================= Profil ================= */
-async function viewProfil() {
+const PROFIL_SECTIONS = [
+  { id: 'compte', icon: 'user', titre: 'Mon compte', sous: 'Prénom, semestre, déconnexion' },
+  { id: 'rappels', icon: 'bell', titre: 'Rappels', sous: 'Heures et types' },
+  { id: 'affichage', icon: 'sun', titre: 'Apparence et sons', sous: 'Thème, sons, volume' },
+  { id: 'bibliotheque', icon: 'books', titre: 'Bibliothèque', sous: 'Contenus partagés' , admin: 'Importer du contenu, invité·es' },
+  { id: 'signalements', icon: 'flag', titre: 'Signalements', sous: 'Questions à corriger' },
+  { id: 'aide', icon: 'help', titre: 'Aide', sous: 'Leitner, maîtrise, version' },
+  { id: 'donnees', icon: 'download', titre: 'Mes données', sous: 'Exporter' }
+];
+
+async function viewProfil(section) {
   tabbar('#/profil'); setHalo(null);
   const u = S.getUser();
   const theme = localStorage.getItem('theme') || 'auto';
   const flags = await S.allFlags();
-  $app.innerHTML = `<h1>Profil</h1>
-    <div class="card" style="padding:16px;display:flex;flex-direction:column;gap:12px">
+  const card = (html) => `<div class="card" style="padding:16px;display:flex;flex-direction:column;gap:12px">${html}</div>`;
+  const etatRappels = { actif: 'Activés', inactif: 'Désactivés', bientot: 'Bientôt', installer: 'À installer', impossible: 'Indisponibles', refuse: 'Bloqués' }[N.etat()];
+  const badge = { rappels: etatRappels, signalements: flags.length ? String(flags.length) : '', affichage: getSons().on ? '' : 'Sons coupés' };
+  const SEC = {
+    compte: card(`
       <label class="field">Prénom<input id="prenom" value="${esc(u.prenom || '')}" autocomplete="given-name"></label>
-      <div class="field">Apparence<div class="seg" role="group">${[['auto', 'Auto'], ['clair', 'Clair'], ['sombre', 'Sombre']].map(([k, l]) => `<button data-th="${k}" aria-pressed="${theme === k}">${l}</button>`).join('')}</div></div>
       <label class="field">Semestre en cours<input id="sem" value="${esc(u.semestre || '')}" placeholder="ex. L1-S2"></label>
-    </div>
-    ${notifCard()}
-    <div class="card" style="padding:16px;display:flex;flex-direction:column;gap:12px">
+      <p class="muted small" style="margin:0">Connecté·e avec ${esc(auth.currentUser?.email || '')}</p>`) + `<button class="btn no block" id="logout">Me déconnecter</button>`,
+    rappels: notifCard(),
+    affichage: card(`<div class="field">Apparence<div class="seg" role="group">${[['auto', 'Auto'], ['clair', 'Clair'], ['sombre', 'Sombre']].map(([k, l]) => `<button data-th="${k}" aria-pressed="${theme === k}">${l}</button>`).join('')}</div></div>`) + card(`
       <div class="between"><h2 class="section-title">Sons</h2><label class="switch"><input type="checkbox" id="sonOn" ${getSons().on ? 'checked' : ''}><span></span><b class="sr">Activer les sons</b></label></div>
       <div class="row" style="gap:12px;${getSons().on ? '' : 'opacity:.5'}"><span class="small muted">Volume</span><input type="range" id="sonVol" min="0" max="100" step="5" value="${Math.round(getSons().vol * 100)}" style="flex:1"><button class="flag-btn" id="sonTest">Écouter</button></div>
-      <p class="muted small" style="margin:0">Sur iPhone, les sons suivent le bouton silencieux.</p>
-    </div>
-    ${S.isAdmin() ? `<div class="card" style="padding:16px;display:flex;flex-direction:column;gap:12px">
+      <p class="muted small" style="margin:0">Sur iPhone, les sons suivent le bouton silencieux.</p>`),
+    bibliotheque: S.isAdmin() ? card(`
       <h2 class="section-title">Importer du contenu</h2>
       <p class="muted small" style="margin:0">Dépose les fichiers .json que Claude t’a préparés. Si une matière existe déjà, son contenu est remplacé et la progression de chacun·e est conservée.</p>
       <div id="drop" class="dropzone">
@@ -1210,42 +1225,46 @@ async function viewProfil() {
         <span class="small muted">ou</span>
         <label class="btn primary">Choisir des fichiers<input type="file" id="file" accept=".json,application/json" multiple class="sr"></label>
       </div>
-      <div id="imp" class="list"></div>
-    </div>
-    <div class="card" style="padding:16px;display:flex;flex-direction:column;gap:12px">
+      <div id="imp" class="list"></div>`) + card(`
       <h2 class="section-title">Invité·es · ${(S.getAcces()?.membres || []).length}</h2>
       <p class="muted small" style="margin:0">Ces personnes voient la même bibliothèque que toi, avec leur propre progression. Elles doivent se connecter avec cette adresse.</p>
       <div class="list">${(S.getAcces()?.membres || []).map((e) => `<div class="between"><span>${esc(e)}</span><button class="flag-btn" data-rm="${esc(e)}">Retirer</button></div>`).join('')}</div>
-      <form id="inv" class="row"><label class="sr" for="invmail">Adresse e-mail</label><input id="invmail" type="email" placeholder="adresse@gmail.com" style="flex:1;border:2px solid var(--line);background:var(--card);border-radius:14px;padding:12px 14px;font-size:16px;min-width:0"><button class="btn primary" type="submit">Inviter</button></form>
-    </div>` : `<div class="card" style="padding:16px;display:flex;flex-direction:column;gap:8px">
-      <h2 class="section-title">Bibliothèque partagée</h2>
-      <p class="muted small" style="margin:0">${S.libOk() ? 'Tu as accès au contenu commun. Ta progression n’appartient qu’à toi.' : `Tu n’as pas encore accès au contenu commun. Donne cette adresse à l’admin : <b>${esc(auth.currentUser?.email || '')}</b>`}</p>
-    </div>`}
-    <div class="card" style="padding:16px;display:flex;flex-direction:column;gap:12px">
-      <h2 class="section-title">Signalements · ${flags.length}</h2>
-      ${flags.length ? `<div class="list">${flags.map((f) => `<div class="between" style="align-items:flex-start"><div><b class="small">${esc(f.matiere)} · ${esc(f.item.id)}</b><div class="small muted">${esc(itemLabel(f.item))}</div>${f.flag.note ? `<div class="small">« ${esc(f.flag.note)} »</div>` : ''}</div><button class="flag-btn" data-unflag="${esc(f.matiere)}|${esc(f.item.id)}">Retirer</button></div>`).join('')}</div>
-      <button class="btn plain block" id="copyflags">${ic('copy')}Copier pour Claude</button>` : '<p class="muted small" style="margin:0">Aucun signalement. Pendant une session, touche « Signaler » sous une carte qui te semble fausse.</p>'}
-    </div>
-    <button class="card cfg-card" id="tutoP"><span><b>Comment fonctionne la boîte de Leitner ?</b><span class="small muted" style="display:block">Le petit tuto des 5 boîtes</span></span>${ic('next')}</button>
-    <div class="card" style="padding:16px;display:flex;flex-direction:column;gap:12px">
-      <h2 class="section-title">Mes données</h2>
-      <button class="btn plain block" id="export">${ic('download')}Exporter mes données</button>
-      <button class="btn no block" id="logout">Me déconnecter</button>
-      <p class="muted small" style="margin:0;text-align:center">${esc(auth.currentUser?.email || '')} · version ${VERSION}</p>
-    </div>`;
+      <form id="inv" class="row"><label class="sr" for="invmail">Adresse e-mail</label><input id="invmail" type="email" placeholder="adresse@gmail.com" style="flex:1;border:2px solid var(--line);background:var(--card);border-radius:14px;padding:12px 14px;font-size:16px;min-width:0"><button class="btn primary" type="submit">Inviter</button></form>`)
+      : card(`<p class="muted small" style="margin:0">${S.libOk() ? 'Tu as accès au contenu commun. Ta progression n’appartient qu’à toi.' : `Tu n’as pas encore accès au contenu commun. Donne cette adresse à l’admin : <b>${esc(auth.currentUser?.email || '')}</b>`}</p>`),
+    signalements: card(`${flags.length ? `<div class="list">${flags.map((f) => `<div class="between" style="align-items:flex-start"><div><b class="small">${esc(f.matiere)} · ${esc(f.item.id)}</b><div class="small muted">${esc(itemLabel(f.item))}</div>${f.flag.note ? `<div class="small">« ${esc(f.flag.note)} »</div>` : ''}</div><button class="flag-btn" data-unflag="${esc(f.matiere)}|${esc(f.item.id)}">Retirer</button></div>`).join('')}</div>
+      <button class="btn plain block" id="copyflags">${ic('copy')}Copier pour Claude</button>` : '<p class="muted small" style="margin:0">Aucun signalement. Pendant une session, touche « Signaler » sous une question qui te semble fausse ou mal posée.</p>'}`),
+    aide: `<button class="card cfg-card" id="tutoP"><span><b>Comment fonctionne la boîte de Leitner ?</b><span class="small muted" style="display:block">Le petit tuto des 5 boîtes</span></span>${ic('next')}</button>
+      ${card(`<b>Et la maîtrise ?</b><p class="muted small" style="margin:0">Dans chaque matière, touche le cercle de maîtrise pour voir comment elle se calcule et la liste de tes notions.</p>`)}
+      <p class="muted small" style="margin:0;text-align:center">Stroop Study · version ${VERSION}</p>`,
+    donnees: card(`<p class="muted small" style="margin:0">Télécharge une copie de ta progression et de tes réglages (fichier .json).</p><button class="btn plain block" id="export">${ic('download')}Exporter mes données</button>`)
+  };
+  const sec = PROFIL_SECTIONS.find((x) => x.id === section);
+  if (sec) {
+    $app.innerHTML = `<div class="row" style="gap:12px"><a class="icon-btn" href="#/profil" aria-label="Retour">${ic('back')}</a><h1 style="margin:0">${esc(sec.titre)}</h1></div>${SEC[sec.id]}`;
+  } else {
+    const initiale = (u.prenom || auth.currentUser?.email || '?').trim().charAt(0).toUpperCase();
+    $app.innerHTML = `<h1>Profil</h1>
+      <div class="card" style="padding:16px;display:flex;align-items:center;gap:14px">
+        <span class="avatar">${esc(initiale)}</span>
+        <span style="flex:1;min-width:0"><b style="font-size:18px">${esc(u.prenom || 'Toi')}</b><span class="small muted" style="display:block;overflow:hidden;text-overflow:ellipsis">${esc(u.semestre || '')} · ${esc(auth.currentUser?.email || '')}</span></span>
+      </div>
+      <div class="card menu">${PROFIL_SECTIONS.map((x) => `<a class="menu-row" href="#/profil/${x.id}"><span class="menu-ic">${ic(x.icon)}</span><span class="menu-txt"><b>${esc(x.titre)}</b><span class="small muted">${esc(S.isAdmin() && x.admin ? x.admin : x.sous)}</span></span>${badge[x.id] ? `<span class="menu-badge">${esc(badge[x.id])}</span>` : ''}${ic('next')}</a>`).join('')}</div>
+      <p class="muted small" style="margin:0;text-align:center">version ${VERSION}</p>`;
+    return;
+  }
   bindNotifCard();
-  document.getElementById('sonOn').onchange = (e) => { setSons({ on: e.target.checked }); if (e.target.checked) son('ok'); viewProfil(); };
-  document.getElementById('sonVol').onchange = (e) => { setSons({ vol: Number(e.target.value) / 100 }); son('ok'); };
-  document.getElementById('sonTest').onclick = () => son('up');
-  document.getElementById('prenom').onchange = (e) => S.saveUser({ prenom: e.target.value.trim() }).then(() => toast('Enregistré'));
-  document.getElementById('sem').onchange = (e) => S.saveUser({ semestre: e.target.value.trim() || 'L1-S1' }).then(() => toast('Enregistré'));
-  $app.querySelectorAll('[data-th]').forEach((b) => b.onclick = () => { localStorage.setItem('theme', b.dataset.th); S.saveUser({ theme: b.dataset.th }); applyTheme(); viewProfil(); });
+  const sonOn = document.getElementById('sonOn'); if (sonOn) sonOn.onchange = (e) => { setSons({ on: e.target.checked }); if (e.target.checked) son('ok'); viewProfil(section); };
+  const sonVol = document.getElementById('sonVol'); if (sonVol) sonVol.onchange = (e) => { setSons({ vol: Number(e.target.value) / 100 }); son('ok'); };
+  const sonTest = document.getElementById('sonTest'); if (sonTest) sonTest.onclick = () => son('up');
+  const prenom = document.getElementById('prenom'); if (prenom) prenom.onchange = (e) => S.saveUser({ prenom: e.target.value.trim() }).then(() => toast('Enregistré'));
+  const sem = document.getElementById('sem'); if (sem) sem.onchange = (e) => S.saveUser({ semestre: e.target.value.trim() || 'L1-S1' }).then(() => toast('Enregistré'));
+  $app.querySelectorAll('[data-th]').forEach((b) => b.onclick = () => { localStorage.setItem('theme', b.dataset.th); S.saveUser({ theme: b.dataset.th }); applyTheme(); viewProfil(section); });
   document.getElementById('inv')?.addEventListener('submit', async (e) => {
     e.preventDefault(); const v = document.getElementById('invmail').value.trim();
     if (!v || !v.includes('@')) return toast('Adresse e-mail invalide');
-    await S.setMembres([...(S.getAcces()?.membres || []), v]); toast('Invitation enregistrée'); viewProfil();
+    await S.setMembres([...(S.getAcces()?.membres || []), v]); toast('Invitation enregistrée'); viewProfil(section);
   });
-  $app.querySelectorAll('[data-rm]').forEach((b) => b.onclick = async () => { await S.setMembres((S.getAcces()?.membres || []).filter((x) => x !== b.dataset.rm)); viewProfil(); });
+  $app.querySelectorAll('[data-rm]').forEach((b) => b.onclick = async () => { await S.setMembres((S.getAcces()?.membres || []).filter((x) => x !== b.dataset.rm)); viewProfil(section); });
   const fileIn = document.getElementById('file');
   const importFiles = async (files) => {
     const out = document.getElementById('imp');
@@ -1269,19 +1288,19 @@ async function viewProfil() {
     ['dragleave', 'dragend'].forEach((ev) => drop.addEventListener(ev, () => drop.classList.remove('over')));
     drop.addEventListener('drop', async (e) => { e.preventDefault(); drop.classList.remove('over'); await importFiles([...(e.dataTransfer?.files || [])]); });
   }
-  $app.querySelectorAll('[data-unflag]').forEach((b) => b.onclick = async () => { const [c, id] = b.dataset.unflag.split('|'); await S.unflagItem(c, id); viewProfil(); });
+  $app.querySelectorAll('[data-unflag]').forEach((b) => b.onclick = async () => { const [c, id] = b.dataset.unflag.split('|'); await S.unflagItem(c, id); viewProfil(section); });
   document.getElementById('copyflags')?.addEventListener('click', async () => {
     const txt = 'Signalements de mon appli de révisions :\n\n' + flags.map((f) => `- ${f.matiere} · ${f.item.id} · « ${itemLabel(f.item)} »${f.flag.note ? ` → ${f.flag.note}` : ''}`).join('\n');
     try { await navigator.clipboard.writeText(txt); toast('Copié ! Colle-le dans ta conversation avec Claude'); } catch { toast('Copie impossible sur cet appareil'); }
   });
-  document.getElementById('tutoP').onclick = () => leitnerTuto(null);
-  document.getElementById('export').onclick = async () => {
+  const tutoP = document.getElementById('tutoP'); if (tutoP) tutoP.onclick = () => leitnerTuto(null);
+  const exp = document.getElementById('export'); if (exp) exp.onclick = async () => {
     const data = await S.exportAll();
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
     const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `stroop-study-export-${today()}.json`; a.click();
     setTimeout(() => URL.revokeObjectURL(a.href), 2000);
   };
-  document.getElementById('logout').onclick = async () => { session = null; clearSaved(); await signOut(auth); };
+  const lo = document.getElementById('logout'); if (lo) lo.onclick = async () => { session = null; clearSaved(); await signOut(auth); };
 }
 
 /* ================= Démarrage ================= */
