@@ -10,7 +10,7 @@ import * as S from './store.js';
 import { today, isDue, dueDate, nextState, mastery, notionStats, seenCount, prioritize, shuffle, streak, INTERVALS } from './leitner.js';
 import { TYPES, TYPE_KEYS, NIVEAUX, typeLabel, timeFor, formatOf, checkCourte, sameSet, resolveVariants } from './types.js';
 
-const VERSION = '2.7.0';
+const VERSION = '2.7.1';
 const $app = document.getElementById('app');
 const $tab = document.getElementById('tabbar');
 const $halos = document.getElementById('halos');
@@ -1147,7 +1147,7 @@ function notifCard() {
   }[e];
   const on = e === 'actif';
   return `<div class="card" style="padding:16px;display:flex;flex-direction:column;gap:12px">
-    <div class="between"><h2 class="section-title">Activer les rappels</h2>${msg ? '' : `<label class="switch"><input type="checkbox" id="notifOn" ${on ? 'checked' : ''}><span></span><b class="sr">Activer les rappels</b></label>`}</div>
+    <div class="between"><h2 class="section-title">Activer les rappels</h2>${msg ? '' : `<label class="tgl"><input type="checkbox" id="notifOn" ${on ? 'checked' : ''}><span></span><b class="sr">Activer les rappels</b></label>`}</div>
     ${msg ? `<p class="muted small" style="margin:0">${msg}</p>` : `
     <p class="muted small" style="margin:0">Jamais plus de 2 par jour, et seulement si tu n’as pas encore révisé.</p>
     <div class="list" style="gap:10px;${on ? '' : 'opacity:.5;pointer-events:none'}">
@@ -1213,7 +1213,7 @@ async function viewProfil(section) {
       <p class="muted small" style="margin:0">Connecté·e avec ${esc(auth.currentUser?.email || '')}</p>`) + `<button class="btn no block" id="logout">Me déconnecter</button>`,
     rappels: notifCard(),
     affichage: card(`<div class="field">Apparence<div class="seg" role="group">${[['auto', 'Auto'], ['clair', 'Clair'], ['sombre', 'Sombre']].map(([k, l]) => `<button data-th="${k}" aria-pressed="${theme === k}">${l}</button>`).join('')}</div></div>`) + card(`
-      <div class="between"><h2 class="section-title">Sons</h2><label class="switch"><input type="checkbox" id="sonOn" ${getSons().on ? 'checked' : ''}><span></span><b class="sr">Activer les sons</b></label></div>
+      <div class="between"><h2 class="section-title">Sons</h2><label class="tgl"><input type="checkbox" id="sonOn" ${getSons().on ? 'checked' : ''}><span></span><b class="sr">Activer les sons</b></label></div>
       <div class="row" style="gap:12px;${getSons().on ? '' : 'opacity:.5'}"><span class="small muted">Volume</span><input type="range" id="sonVol" min="0" max="100" step="5" value="${Math.round(getSons().vol * 100)}" style="flex:1"><button class="flag-btn" id="sonTest">Écouter</button></div>
       <p class="muted small" style="margin:0">Sur iPhone, les sons suivent le bouton silencieux.</p>`),
     bibliotheque: S.isAdmin() ? card(`
@@ -1327,7 +1327,7 @@ onAuthStateChanged(auth, async (user) => {
 
 /* ================= Sons de l'interface ================= */
 // Le quiz a ses propres sons (bonne réponse, erreur…) ; ici, un retour discret sur le reste de l'appli.
-const QUIZ = '.q, .stage, [data-tri], [data-i], [data-vf], [data-left], [data-right], [data-up], [data-down], #val, #skip, #yes, #no, #half, #pause, #resumeP, #card, label.switch, input';
+const QUIZ = '.q, .stage, [data-tri], [data-i], [data-vf], [data-left], [data-right], [data-up], [data-down], #val, #skip, #yes, #no, #half, #pause, #resumeP, #card, label.switch, label.tgl, input';
 document.addEventListener('click', (e) => {
   const el = e.target.closest('button, a, [data-stroop]');
   if (!el || el.disabled || el.closest(QUIZ) || el.matches(QUIZ)) return;
