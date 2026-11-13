@@ -60,7 +60,7 @@ function histo(f) {
 }
 
 function barres(f) {
-  const iw = W - PAD.l - PAD.r, ih = H - PAD.t - PAD.b - 14;
+  const iw = W - PAD.l - PAD.r, ih = H - PAD.t - PAD.b - 14 - (f.series.length > 1 ? 0 : -14) - (Math.max(...f.categories.map((k) => String(k).length)) * 5.4 > iw / f.categories.length ? 10 : 0);
   const all = f.series.flatMap((s) => s.valeurs);
   const min = f.ymin ?? 0, max = f.ymax ?? niceMax(Math.max(...all));
   const gw = iw / f.categories.length, ns = f.series.length, bw = Math.min(34, (gw * 0.7) / ns);
@@ -79,7 +79,8 @@ function barres(f) {
       s += `<rect x="${x0 + si * bw}" y="${y}" width="${bw - 2}" height="${PAD.t + ih - y}" rx="3" class="fg-bar s${si}"/>
         <text x="${x0 + si * bw + (bw - 2) / 2}" y="${y - 3}" text-anchor="middle" class="fg-t b">${fmt(v)}</text>`;
     });
-    s += `<text x="${PAD.l + ci * gw + gw / 2}" y="${PAD.t + ih + 13}" text-anchor="middle" class="fg-t">${esc(c)}</text>`;
+    const crowded = Math.max(...f.categories.map((k) => String(k).length)) * 5.4 > gw;
+    s += `<text x="${PAD.l + ci * gw + gw / 2}" y="${PAD.t + ih + 13 + (crowded && ci % 2 ? 10 : 0)}" text-anchor="middle" class="fg-t">${esc(c)}</text>`;
   });
   if (ns > 1) {
     let lx = PAD.l;
