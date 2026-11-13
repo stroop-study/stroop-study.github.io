@@ -34,9 +34,14 @@ export function timeFor(it) {
 
 /** Choisit une formulation au hasard quand un champ en propose plusieurs (tableau de variantes). */
 export function resolveVariants(it) {
-  const pick = (v) => (Array.isArray(v) ? v[Math.floor(Math.random() * v.length)] : v);
+  // Un seul tirage par question : les variantes de même rang vont ensemble
+  // (scénario n°2 ↔ choix n°2), ce qui permet de varier la situation ET les réponses.
+  const champs = ['question', 'affirmation', 'scenario', 'recto', 'verso'];
+  const tailles = [...champs.map((k) => it[k]), ...(Array.isArray(it.choix) ? it.choix : [])].filter(Array.isArray).map((v) => v.length);
+  const n = tailles.length ? Math.max(...tailles) : 1, idx = Math.floor(Math.random() * n);
+  const pick = (v) => (Array.isArray(v) ? v[idx % v.length] : v);
   const out = { ...it };
-  for (const k of ['question', 'affirmation', 'scenario', 'recto', 'verso']) if (Array.isArray(out[k])) out[k] = pick(out[k]);
+  for (const k of champs) if (Array.isArray(out[k])) out[k] = pick(out[k]);
   if (Array.isArray(out.choix)) out.choix = out.choix.map(pick);
   return out;
 }
