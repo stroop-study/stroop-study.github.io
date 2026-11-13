@@ -1,6 +1,6 @@
 // Service worker : met l'appli en cache pour qu'elle s'ouvre même sans réseau.
 // Les données (cartes, progression) sont gérées hors ligne par Firestore, pas ici.
-const VERSION = 'v2.9.0';
+const VERSION = 'v2.9.1';
 const CACHE = `stroop-${VERSION}`;
 const SHELL = [
   './', 'index.html', 'manifest.webmanifest', 'css/app.css',

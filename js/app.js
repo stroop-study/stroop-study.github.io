@@ -10,7 +10,7 @@ import * as S from './store.js';
 import { today, isDue, dueDate, nextState, mastery, notionStats, seenCount, prioritize, shuffle, streak, INTERVALS } from './leitner.js';
 import { TYPES, TYPE_KEYS, NIVEAUX, typeLabel, timeFor, formatOf, checkCourte, sameSet, resolveVariants } from './types.js';
 
-const VERSION = '2.9.0';
+const VERSION = '2.9.1';
 const $app = document.getElementById('app');
 const $tab = document.getElementById('tabbar');
 const $halos = document.getElementById('halos');
@@ -142,7 +142,9 @@ function viewLogin(mode = 'google', err = '') {
       ${err ? `<p class="feedback ko" role="alert">${esc(err)}</p>` : ''}
       <button class="btn plain block" id="google" style="min-height:58px">${GOOGLE_SVG}Continuer avec Google</button>
       <button class="flag-btn" id="mail" style="align-self:center">Utiliser une adresse e-mail à la place</button>
+      ${N.isStandalone() ? '' : `<button class="flag-btn" id="instL" style="align-self:center">${ic('download')}Installer Stroop sur mon téléphone</button>`}
     </section>`;
+    document.getElementById('instL')?.addEventListener('click', () => installSheet());
     document.getElementById('google').onclick = () => googleLogin((m) => viewLogin('google', m));
     document.getElementById('mail').onclick = () => viewLogin('login');
     return;
@@ -236,6 +238,66 @@ function weekStrip(jours, u = null) {
 
 /* ================= Accès à la bibliothèque ================= */
 const needsVerif = () => auth.currentUser && !auth.currentUser.emailVerified && !S.isAdmin();
+/* ================= Installer l'appli (tuto iOS / Android) ================= */
+let promptInstall = null;
+window.addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); promptInstall = e; });
+window.addEventListener('appinstalled', () => { promptInstall = null; localStorage.setItem('stroop-install-ok', '1'); });
+const UA = navigator.userAgent;
+const estIOS = () => /iPhone|iPad|iPod/.test(UA) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+const estAndroid = () => /Android/.test(UA);
+const estMobile = () => estIOS() || estAndroid();
+const SHARE_IC = '<svg class="ic" viewBox="0 0 24 24" style="width:18px;height:18px;vertical-align:-3px"><path d="M12 3v12M7 8l5-5 5 5M5 12v8h14v-8"/></svg>';
+function installEtapes(os) {
+  if (os === 'ios') return `<ol class="small" style="margin:0;padding-left:20px;display:flex;flex-direction:column;gap:8px">
+      <li>Ouvre <b>stroop-study.github.io</b> dans <b>Safari</b> (sur iPhone récent, Chrome marche aussi).</li>
+      <li>Touche le bouton <b>Partager</b> ${SHARE_IC} : en bas de l’écran sur iPhone, en haut sur iPad (parfois caché derrière « ⋯ »).</li>
+      <li>Fais défiler et choisis <b>« Sur l’écran d’accueil »</b>.</li>
+      <li>Touche <b>Ajouter</b>, en haut à droite. Stroop apparaît sur ton écran d’accueil 🦦</li>
+    </ol>
+    <p class="muted small" style="margin:0">Ouvre ensuite toujours Stroop depuis cette icône : c’est elle qui permet les rappels (iOS 16.4 ou plus récent).</p>`;
+  return `<ol class="small" style="margin:0;padding-left:20px;display:flex;flex-direction:column;gap:8px">
+      <li>Ouvre <b>stroop-study.github.io</b> dans <b>Chrome</b>.</li>
+      <li>Touche le menu <b>⋮</b>, en haut à droite.</li>
+      <li>Choisis <b>« Installer l’application »</b> (ou <b>« Ajouter à l’écran d’accueil »</b>, selon la version).</li>
+      <li>Confirme avec <b>Installer</b>. Stroop arrive avec tes autres applis 🦦</li>
+    </ol>
+    <p class="muted small" style="margin:0">Sur Samsung Internet : menu ☰ → « Ajouter la page à » → « Écran d’accueil ».</p>`;
+}
+function installSheet() {
+  const os = estIOS() ? 'ios' : estAndroid() ? 'android' : null;
+  const deja = N.isStandalone();
+  const sh = openSheet(`
+    <div class="between"><h2>Installer Stroop</h2><button class="icon-btn" data-close aria-label="Fermer">${ic('close')}</button></div>
+    ${deja ? '<p class="feedback ok" style="margin:0">C’est déjà fait : tu utilises Stroop comme une appli ✓</p>' : '<p class="muted small" style="margin:0">Ajoute Stroop sur ton écran d’accueil : il s’ouvre en plein écran comme une vraie appli, plus vite, et peut t’envoyer des rappels.</p>'}
+    ${promptInstall && !deja ? `<button class="btn primary block" id="instNow">${ic('download')}Installer maintenant</button>` : ''}
+    <div class="row" role="tablist" style="gap:8px">
+      <button class="chip" data-os="ios" aria-pressed="${os !== 'android'}">iPhone · iPad</button>
+      <button class="chip" data-os="android" aria-pressed="${os === 'android'}">Android</button>
+    </div>
+    <div id="instSteps" class="card" style="padding:14px;display:flex;flex-direction:column;gap:10px">${installEtapes(os === 'android' ? 'android' : 'ios')}</div>
+    ${!os ? '<p class="muted small" style="margin:0">Sur ordinateur (Chrome ou Edge), clique sur l’icône d’installation à droite de la barre d’adresse.</p>' : ''}
+    <button class="btn plain block" data-close>OK</button>`);
+  const box = document.getElementById('instSteps');
+  document.querySelectorAll('[data-os]').forEach((b) => b.onclick = () => {
+    document.querySelectorAll('[data-os]').forEach((x) => x.setAttribute('aria-pressed', String(x === b)));
+    box.innerHTML = installEtapes(b.dataset.os);
+  });
+  const now = document.getElementById('instNow');
+  if (now) now.onclick = async () => { promptInstall.prompt(); const r = await promptInstall.userChoice.catch(() => null); promptInstall = null; if (r?.outcome === 'accepted') { localStorage.setItem('stroop-install-ok', '1'); toast('Stroop est installé 🦦'); } document.querySelector('.sheet-back')?.remove(); unlockScroll(); };
+  return sh;
+}
+function installBanner() {
+  if (N.isStandalone() || !estMobile() || localStorage.getItem('stroop-install-masque') || localStorage.getItem('stroop-install-ok')) return '';
+  return `<div class="card" id="instBan" style="display:flex;gap:12px;align-items:center;padding:12px 14px">
+    <div style="flex:1;min-width:0"><b class="small">Installe Stroop sur ton téléphone</b><div class="small muted">Plein écran, plus rapide, et les rappels.</div></div>
+    <button class="btn soft" id="instGo" style="min-height:40px;padding:0 14px">Comment ?</button>
+    <button class="icon-btn sm" id="instX" aria-label="Masquer">${ic('close')}</button></div>`;
+}
+function bindInstallBanner() {
+  const go = document.getElementById('instGo'); if (go) go.onclick = () => installSheet();
+  const x = document.getElementById('instX'); if (x) x.onclick = () => { localStorage.setItem('stroop-install-masque', '1'); document.getElementById('instBan')?.remove(); };
+}
+
 function verifBanner() {
   if (!needsVerif()) return '';
   return `<div class="card" style="padding:14px;display:flex;flex-direction:column;gap:10px"><b>Confirme ton adresse e-mail</b><span class="small muted">Clique sur le lien reçu par e-mail pour accéder au contenu partagé, puis touche « C’est fait ».</span><div class="two"><button class="btn plain" id="resend">Renvoyer le mail</button><button class="btn primary" id="verified">C’est fait</button></div></div>`;
@@ -306,6 +368,7 @@ async function viewHome() {
     ${stroopImg(mood)}
   </div>
   ${verifBanner()}
+  ${installBanner()}
   ${weekStrip(u.jours, u)}
   ${saved ? `<button class="cta" id="resume"><span><span class="t">Reprendre ma session</span><span class="s">${esc(saved.code)} · ${saved.results?.length || saved.i}/${saved.ids.length} · là où tu t’étais arrêté·e</span></span><span class="go">${ic('arrow')}</span></button>` : ''}
   ${best || !S.isAdmin() ?  (best ? `<button class="cta cta-m c-${best.m.couleur}" id="daily" ${todo ? '' : 'disabled'}><span><span class="t">Session du jour</span><span class="s">${todo ? `${esc(best.m.code)} · ${plural(todo, 'carte')} · environ ${Math.max(2, Math.round(todo / 2))} min` : 'Rien à revoir pour l’instant'}</span></span><span class="go">${ic('arrow')}</span></button>` : '') : `<a class="cta" href="#/profil/bibliotheque"><span><span class="t">Importer du contenu</span><span class="s">Ajoute ton premier fichier de révisions</span></span><span class="go">${ic('arrow')}</span></a>`}
@@ -335,6 +398,7 @@ async function viewHome() {
     go('#/session');
   });
   document.getElementById('daily')?.addEventListener('click', () => startSession({ code: best.m.code, kind: 'jour' }));
+  bindInstallBanner();
   if (N.proposer(u)) setTimeout(() => { if (location.hash === '' || location.hash === '#/') inviteNotif(); }, 900);
 }
 const semestreLabel = (s) => (s || '').replace('-S', ' · Semestre ');
@@ -1286,7 +1350,8 @@ async function viewProfil(section) {
     signalements: card(`<h2 class="section-title">Mes signalements</h2>${flags.length ? `<div class="list">${flags.map((f) => `<div class="between" style="align-items:flex-start"><div><b class="small">${esc(f.matiere)} · ${esc(f.item.id)}</b><div class="small muted">${esc(itemLabel(f.item))}</div>${f.flag.note ? `<div class="small">« ${esc(f.flag.note)} »</div>` : ''}</div><button class="flag-btn" data-unflag="${esc(f.matiere)}|${esc(f.item.id)}">Retirer</button></div>`).join('')}</div>` : '<p class="muted small" style="margin:0">Aucun signalement. Pendant une session, touche « Signaler » sous une question qui te semble fausse ou mal posée.</p>'}`)
       + (S.isAdmin() ? card(`<h2 class="section-title">Signalements des invité·es</h2>${flagsInv === null ? `<p class="muted small" style="margin:0">Pour les voir, mets à jour les règles Firebase une fois : copie-les, puis colle-les dans Firebase (<b>Firestore → Règles</b>) et clique sur <b>Publier</b>.</p><button class="btn plain block" id="copyrules">${ic('copy')}Copier les règles</button>` : flagsInv.length ? `<div class="list">${flagsInv.map((f) => `<div class="between" style="align-items:flex-start"><div><b class="small">${esc(f.code)} · ${esc(f.item)}</b> <span class="small muted">par ${esc(f.prenom || f.email || 'un·e invité·e')}</span><div class="small muted">${esc(f.it ? itemLabel(f.it) : 'Question introuvable dans le contenu actuel')}</div>${f.note ? `<div class="small">« ${esc(f.note)} »</div>` : ''}</div><button class="flag-btn" data-unflaginv="${esc(f.sid)}">Retirer</button></div>`).join('')}</div>` : '<p class="muted small" style="margin:0">Aucun signalement de tes invité·es pour l’instant.</p>'}`) : '')
       + ((flags.length || flagsInv?.length) ? `<button class="btn plain block" id="copyflags">${ic('copy')}Copier tout pour Claude</button>` : ''),
-    aide: `<button class="card cfg-card" id="tutoP"><span><b>Comment fonctionne la boîte de Leitner ?</b><span class="small muted" style="display:block">Le petit tuto des 5 boîtes</span></span>${ic('next')}</button>
+    aide: `<button class="card cfg-card" id="instP"><span><b>Installer Stroop sur mon téléphone</b><span class="small muted" style="display:block">Le tuto iPhone et Android, à partager aussi</span></span>${ic('next')}</button>
+      <button class="card cfg-card" id="tutoP"><span><b>Comment fonctionne la boîte de Leitner ?</b><span class="small muted" style="display:block">Le petit tuto des 5 boîtes</span></span>${ic('next')}</button>
       ${card(`<b>Et la maîtrise ?</b><p class="muted small" style="margin:0">Dans chaque matière, touche le cercle de maîtrise pour voir comment elle se calcule et la liste de tes notions.</p>`)}
       <p class="muted small" style="margin:0;text-align:center">Stroop Study · version ${VERSION}</p>`,
     donnees: card(`<p class="muted small" style="margin:0">Télécharge une copie de ta progression et de tes réglages (fichier .json).</p><button class="btn plain block" id="export">${ic('download')}Exporter mes données</button>`)
@@ -1353,6 +1418,7 @@ async function viewProfil(section) {
     try { await navigator.clipboard.writeText(txt); toast('Copié ! Colle-le dans ta conversation avec Claude'); } catch { toast('Copie impossible sur cet appareil'); }
   });
   const tutoP = document.getElementById('tutoP'); if (tutoP) tutoP.onclick = () => leitnerTuto(null);
+  const instP = document.getElementById('instP'); if (instP) instP.onclick = () => installSheet();
   const exp = document.getElementById('export'); if (exp) exp.onclick = async () => {
     const data = await S.exportAll();
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });

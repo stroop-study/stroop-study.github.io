@@ -427,3 +427,4 @@ body::before{content:'';position:fixed;top:0;left:0;right:0;height:env(safe-area
 .vtag{flex:none;font-weight:800;font-size:13px;padding:4px 10px;border-radius:999px;background:var(--ghost);color:var(--ink)}
 .btn .nb{font-size:12px;font-weight:800;padding:2px 7px;border-radius:999px;background:rgba(0,0,0,.08);margin-left:2px}
 .day .d.done.arc{background:linear-gradient(135deg,#FFB3C7,#FFE08A 30%,#B5F0C0 55%,#A9D8FF 78%,#D7B8FF);color:#1B1E2E}
+[data-os][aria-pressed="true"]{background:var(--ink);color:var(--bg);border-color:var(--ink)}
