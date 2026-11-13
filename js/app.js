@@ -1,4 +1,5 @@
 // Stroop Study — application principale (routeur + écrans).
+import { figureHtml } from './figures.js';
 import {
   auth, onAuthStateChanged, GoogleAuthProvider, signInWithPopup, signInWithRedirect, getRedirectResult,
   sendEmailVerification, signInWithEmailAndPassword, createUserWithEmailAndPassword, sendPasswordResetEmail, signOut
@@ -7,7 +8,7 @@ import * as S from './store.js';
 import { today, isDue, dueDate, nextState, mastery, seenCount, prioritize, shuffle, streak, INTERVALS } from './leitner.js';
 import { TYPES, TYPE_KEYS, NIVEAUX, typeLabel, timeFor, formatOf, checkCourte, sameSet } from './types.js';
 
-const VERSION = '2.1.0';
+const VERSION = '2.2.0';
 const $app = document.getElementById('app');
 const $tab = document.getElementById('tabbar');
 const $halos = document.getElementById('halos');
@@ -347,6 +348,8 @@ function cfgSummary(cfg) {
   return `${t} · ${n} · ${niv} · chrono ${cfg.chrono ? 'activé' : 'désactivé'}`;
 }
 
+const PARTIES = { CM: 'Cours magistraux', TD: 'Travaux dirigés', METHODE: 'Méthode' };
+
 async function viewMatiere(code) {
   tabbar('#/matieres');
   const m = S.getMatiere(code);
@@ -386,9 +389,10 @@ async function viewMatiere(code) {
       }).join('')}</div>
       <div class="between"><h2 class="section-title">Chapitres à réviser</h2><button class="flag-btn" id="all" style="color:var(--m-ink);font-weight:800">${all ? 'Tout décocher' : 'Tout cocher'}</button></div>
       <div class="list">
-        ${chaps.map((c) => {
+        ${chaps.map((c, ci) => {
+          const partHead = c.partie && c.partie !== chaps[ci - 1]?.partie ? `<div class="partie-head"><span>${esc(PARTIES[c.partie] || c.partie)}</span><button class="flag-btn" data-partie="${esc(c.partie)}" style="color:var(--m-ink);font-weight:800">${chaps.filter((k) => k.partie === c.partie).every((k) => st.sel.has(k.id)) ? 'Décocher' : 'Cocher'}</button></div>` : '';
           const ids = c.elements.map((e) => e.id); const mm = mastery(ids, x.prog); const vus = seenCount(ids, x.prog);
-          return `<div class="chaprow">
+          return `${partHead}<div class="chaprow">
             <button class="chap" data-chap="${esc(c.id)}" aria-pressed="${st.sel.has(c.id)}">
               <span class="box" aria-hidden="true"><svg class="ic" viewBox="0 0 24 24">${IC.check}</svg></span>
               <span class="info"><span class="between"><span class="name">${esc(c.titre)}</span><span class="small muted">${pct(mm)}</span></span>
@@ -409,6 +413,7 @@ async function viewMatiere(code) {
     </div>`;
     $app.querySelectorAll('[data-chap]').forEach((b) => b.onclick = () => { const id = b.dataset.chap; st.sel.has(id) ? st.sel.delete(id) : st.sel.add(id); render(); });
     $app.querySelectorAll('[data-fiche]').forEach((b) => b.onclick = () => ficheSheet(m, chaps.find((c) => c.id === b.dataset.fiche)));
+    $app.querySelectorAll('[data-partie]').forEach((b) => b.onclick = () => { const p = b.dataset.partie; const cs = chaps.filter((c) => c.partie === p); const on = cs.every((c) => st.sel.has(c.id)); cs.forEach((c) => on ? st.sel.delete(c.id) : st.sel.add(c.id)); render(); });
     document.getElementById('all').onclick = () => { if (all) st.sel.clear(); else chaps.forEach((c) => st.sel.add(c.id)); render(); };
     document.getElementById('ringinfo').onclick = () => masteryInfo(m);
     document.getElementById('tuto').onclick = () => leitnerTuto(m);
@@ -510,7 +515,7 @@ function ficheSheet(m, chap, sectionId) {
   const sh = openSheet(`
     <div class="between"><h2 style="font-size:20px">${esc(chap.titre)}</h2><button class="icon-btn" data-close aria-label="Fermer">${ic('close')}</button></div>
     ${chap.fiche.map((s) => `<section class="fiche-sec ${s.id === sectionId ? 'hl' : ''}" id="fs-${esc(s.id)}">
-      <h3>${esc(s.titre)}</h3><ul>${s.points.map((p) => `<li>${esc(p)}</li>`).join('')}</ul></section>`).join('')}`, `c-${m.couleur}`);
+      <h3>${esc(s.titre)}</h3><ul>${s.points.map((p) => `<li>${esc(p)}</li>`).join('')}</ul>${figureHtml(s.figure)}</section>`).join('')}`, `c-${m.couleur}`);
   if (sectionId) setTimeout(() => sh.back.querySelector(`#fs-${CSS.escape(sectionId)}`)?.scrollIntoView({ block: 'start', behavior: 'smooth' }), 60);
 }
 
@@ -691,7 +696,7 @@ async function viewSession() {
   const feedback = (extraHtml = '') => {
     if (!st.answered) return '';
     const title = st.timeout ? 'Temps écoulé !' : st.skip ? 'Pas de souci, on la reverra.' : st.correct ? 'Bien joué !' : 'Pas tout à fait.';
-    return `<div class="feedback ${st.correct ? 'ok' : 'ko'}" role="status"><b>${title}</b>${extraHtml}${esc(it.explication || '')}${boxNote()}
+    return `<div class="feedback ${st.correct ? 'ok' : 'ko'}" role="status"><b>${title}</b>${extraHtml}${esc(it.explication || '')}${figureHtml(it.figureCorrection)}${boxNote()}
       ${!st.correct ? ficheLink() : ''}</div>`;
   };
   const boxNote = () => {
@@ -706,7 +711,7 @@ async function viewSession() {
   const footer = (canValidate, validateLabel = 'Valider') => st.answered
     ? `${st.correct ? `<button class="flag-btn pif" id="pif" aria-pressed="${st.pif}">${st.pif ? '✓ Noté : c’était au pif' : 'C’était au pif ?'}</button>` : ''}<button class="btn primary block" id="next">Continuer${ic('next')}</button>`
     : `<div class="two"><button class="btn plain" id="skip">Je ne sais pas</button><button class="btn primary" id="val" ${canValidate ? '' : 'disabled'}>${validateLabel}</button></div>`;
-  const scenario = () => it.type === 'cas' ? `<div class="scenario"><span class="lab">Cas pratique</span><p>${esc(it.scenario)}</p></div>` : '';
+  const scenario = () => (it.type === 'cas' ? `<div class="scenario"><span class="lab">Cas pratique</span><p>${esc(it.scenario)}</p></div>` : '') + figureHtml(it.figure);
   const flag = () => `<button class="flag-btn" id="flag">${ic('flag')}Signaler</button>`;
 
   const render = () => {
@@ -718,7 +723,7 @@ async function viewSession() {
           <button class="fcard" id="card" aria-label="${st.flipped ? 'Réponse' : 'Retourner la carte'}">
             <span class="swipe-tag no" id="tno">À revoir</span><span class="swipe-tag yes" id="tyes">Je sais</span>
             <span class="lab">${st.flipped ? 'Réponse' : 'Définis'}</span>
-            <span class="body">${st.flipped ? `<span class="verso">${esc(it.verso)}</span>` : `<span class="recto">${esc(it.recto)}</span>`}</span>
+            <span class="body">${st.flipped ? `<span class="verso">${esc(it.verso)}</span>${figureHtml(it.figureVerso)}` : `<span class="recto">${esc(it.recto)}</span>${figureHtml(it.figure)}`}</span>
             <span class="hint">${ic('flip')}${st.flipped ? 'Glisse à droite si tu savais, à gauche sinon' : 'Touche pour retourner'}</span>
           </button>
         </div>

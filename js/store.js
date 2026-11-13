@@ -1,6 +1,7 @@
 // Couche de données : lecture et écriture dans Firestore, avec un petit cache en mémoire.
 import { db, doc, getDoc, setDoc, collection, getDocs } from './firebase.js';
 import { today } from './leitner.js';
+import { checkFigure } from './figures.js';
 
 export const COULEURS = ['orange', 'rose', 'jaune', 'bleu', 'violet', 'vert'];
 
@@ -181,6 +182,7 @@ function checkElement(e) {
     case 'courte': if (!e.question || !Array.isArray(e.reponses) || !e.reponses.length) bad('Réponse courte incomplète'); break;
     default: bad(`Type inconnu (${e.type})`);
   }
+  for (const k of ['figure', 'figureVerso', 'figureCorrection']) if (e[k]) checkFigure(e[k], e.id);
 }
 
 /** Validation et import d'un fichier de contenu. */
@@ -190,6 +192,7 @@ export function validateContenu(data) {
   const ids = new Set();
   for (const c of data.chapitres) {
     if (!c.id || !c.titre || !Array.isArray(c.elements)) throw new Error(`Chapitre invalide : ${c.titre || c.id || '?'}`);
+    for (const s of c.fiche || []) if (s.figure) checkFigure(s.figure, `${c.id} / ${s.id}`);
     for (const e of c.elements) {
       if (!e.id || ids.has(e.id)) throw new Error(`Identifiant manquant ou en double : ${e.id || '?'}`);
       ids.add(e.id);
