@@ -10,7 +10,7 @@ import * as S from './store.js';
 import { today, isDue, dueDate, nextState, mastery, notionStats, seenCount, prioritize, shuffle, streak, INTERVALS } from './leitner.js';
 import { TYPES, TYPE_KEYS, NIVEAUX, typeLabel, timeFor, formatOf, checkCourte, sameSet, resolveVariants } from './types.js';
 
-const VERSION = '2.8.0';
+const VERSION = '2.8.1';
 const $app = document.getElementById('app');
 const $tab = document.getElementById('tabbar');
 const $halos = document.getElementById('halos');
@@ -716,7 +716,8 @@ async function viewSession() {
   const st = {
     flipped: false, answered: false, correct: null, pif: false, skip: false, timeout: false,
     picked: new Set(), text: '',
-    perm: shuffle((it.choix || []).map((_, i) => i)),
+    // « lettres » : format examen a) b) c)… avec réponses combinées (« C et D ») → ordre fixe
+    perm: it.lettres ? (it.choix || []).map((_, i) => i) : shuffle((it.choix || []).map((_, i) => i)),
     order: null, pairs: {}, sel: null, leftPerm: null, rightPerm: null, triPick: {}, triPerm: null,
     deadline: timed ? Date.now() + timeFor(it) * 1000 : null,
     shownAt: Date.now()
@@ -843,12 +844,12 @@ async function viewSession() {
     if (isChoice) {
       const multi = fmt === 'qcm';
       const good = new Set(it.bonnes);
-      body = `<div class="qkind ${multi ? 'multi' : 'single'}">${multi ? '<span class="qk-ic">☑︎</span><span><b>QCM</b> · plusieurs réponses possibles, coche toutes les bonnes</span>' : '<span class="qk-ic">◉</span><span><b>QCU</b> · une seule bonne réponse</span>'}${m.negatif ? '<span class="neg">points négatifs</span>' : ''}</div>
+      body = `<div class="qkind ${multi ? 'multi' : 'single'}">${multi ? '<span class="qk-ic">☑︎</span><span><b>QCM</b> · plusieurs réponses possibles, coche toutes les bonnes</span>' : `<span class="qk-ic">◉</span><span><b>QCU</b> · ${it.lettres ? 'format partiel, une seule bonne réponse sur 5' : 'une seule bonne réponse'}</span>`}${m.negatif ? '<span class="neg">points négatifs</span>' : ''}</div>
         <h2 class="qt">${qText}</h2>
         <div class="list">${st.perm.map((i) => {
           const on = st.picked.has(i); let cls = '';
           if (st.answered) { if (good.has(i)) cls = 'ok'; else if (on) cls = 'ko'; }
-          return `<button class="choice ${cls}" data-i="${i}" aria-pressed="${on}" ${st.answered ? 'disabled' : ''}><span class="mk ${multi ? 's' : 'r'}">${on || (st.answered && good.has(i)) ? `<svg class="ic" viewBox="0 0 24 24">${IC.check}</svg>` : ''}</span><span>${esc(it.choix[i])}</span></button>`;
+          return `<button class="choice ${cls}" data-i="${i}" aria-pressed="${on}" ${st.answered ? 'disabled' : ''}><span class="mk ${multi ? 's' : 'r'}">${on || (st.answered && good.has(i)) ? `<svg class="ic" viewBox="0 0 24 24">${IC.check}</svg>` : ''}</span><span>${it.lettres ? `<b>${'abcdefgh'[i]})</b> ` : ''}${esc(it.choix[i])}</span></button>`;
         }).join('')}</div>`;
       foot = footer(st.picked.size > 0);
     } else if (fmt === 'vf') {
