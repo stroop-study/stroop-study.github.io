@@ -131,6 +131,14 @@ export async function saveMatiere(code, patch) {
   await saveUser({ matieres: list });
 }
 
+/** Contenus présents dans la bibliothèque (pour l'écran Bibliothèque). */
+export function contenusImportes() {
+  return Object.entries(state.contenu).filter(([, c]) => c && c.chapitres).map(([code, c]) => ({
+    code, nom: c.matiere?.nom || code, revision: c.revision ?? null, fichier: c.fichier || null, importeLe: c.importeLe || null,
+    nbElements: c.chapitres.reduce((a, ch) => a + (ch.elements?.length || 0), 0)
+  })).sort((a, b) => a.code.localeCompare(b.code));
+}
+
 export async function getContenu(code) {
   if (state.contenu[code] !== undefined) return state.contenu[code];
   if (!state.libOk) return null;
@@ -226,12 +234,20 @@ export function validateContenu(data) {
   return { code: data.matiere.code, nbChapitres: data.chapitres.length, nbElements: ids.size };
 }
 
-export async function importContenu(data) {
+/** Numéro de version du contenu : champ « revision » du fichier, sinon « _v5 » dans son nom. */
+function revisionDe(data, nomFichier) {
+  if (Number.isInteger(data.revision)) return data.revision;
+  const m = /_v(\d+)/i.exec(nomFichier || '');
+  return m ? Number(m[1]) : null;
+}
+
+export async function importContenu(data, nomFichier = '') {
   const info = validateContenu(data);
   const code = info.code;
-  const importeLe = Date.now();
-  await setDoc(contenuRef(code), { matiere: data.matiere, chapitresJson: JSON.stringify(data.chapitres), version: data.version || 1, importeLe });
-  state.contenu[code] = { matiere: data.matiere, chapitres: data.chapitres, importeLe };
+  const importeLe = Date.now(), revision = revisionDe(data, nomFichier), fichier = nomFichier || null;
+  await setDoc(contenuRef(code), { matiere: data.matiere, chapitresJson: JSON.stringify(data.chapitres), version: data.version || 1, importeLe, revision, fichier });
+  state.contenu[code] = { matiere: data.matiere, chapitres: data.chapitres, importeLe, revision, fichier };
+  info.revision = revision;
   // Crée la matière si elle n'existe pas encore (nouveau semestre, nouvelle matière…).
   if (!getMatiere(code)) {
     const m = data.matiere;

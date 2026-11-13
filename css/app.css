@@ -422,3 +422,5 @@ body::before{content:'';position:fixed;top:0;left:0;right:0;height:env(safe-area
 .avatar{background:var(--nacre);color:#1B1E2E}
 .seg button[aria-pressed="true"]{color:#1B1E2E}
 [data-theme="sombre"] .seg:not(.tseg) button[aria-pressed="true"]{background:var(--m-acc,#F3EADF)}
+
+.vtag{flex:none;font-weight:800;font-size:13px;padding:4px 10px;border-radius:999px;background:var(--ghost);color:var(--ink)}

@@ -10,7 +10,7 @@ import * as S from './store.js';
 import { today, isDue, dueDate, nextState, mastery, notionStats, seenCount, prioritize, shuffle, streak, INTERVALS } from './leitner.js';
 import { TYPES, TYPE_KEYS, NIVEAUX, typeLabel, timeFor, formatOf, checkCourte, sameSet, resolveVariants } from './types.js';
 
-const VERSION = '2.7.4';
+const VERSION = '2.7.5';
 const $app = document.getElementById('app');
 const $tab = document.getElementById('tabbar');
 const $halos = document.getElementById('halos');
@@ -394,7 +394,7 @@ async function viewMatiere(code) {
       <div class="mat-head">
         <div style="min-width:0"><div class="code">${esc(m.code)}</div><b>${esc(m.nom)}</b>
           <div class="small muted">Vu : ${x.vus}/${x.total} · ${plural(x.erreurs, 'erreur')} à revoir${ex ? ` · examen J-${daysUntil(ex.t)}` : ''}</div>
-          ${x.contenu.importeLe ? `<div class="small muted" style="opacity:.75">Contenu mis à jour le ${new Date(x.contenu.importeLe).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long' })} à ${new Date(x.contenu.importeLe).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}</div>` : ''}</div>
+          ${x.contenu.importeLe ? `<div class="small muted" style="opacity:.75">Contenu${x.contenu.revision ? ` v${x.contenu.revision}` : ''} mis à jour le ${new Date(x.contenu.importeLe).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long' })} à ${new Date(x.contenu.importeLe).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}</div>` : ''}</div>
         <button class="ring" id="ringinfo" aria-label="Maîtrise ${x.maitrise} %, comment c’est calculé" style="border:none;background:conic-gradient(var(--m-acc) 0 ${x.maitrise}%, var(--ghost) ${x.maitrise}% 100%)"><div><b>${pct(x.maitrise)}</b><small>maîtrise ⓘ</small></div></button>
       </div>
       <div class="between"><h2 class="section-title">Mes boîtes</h2><button class="flag-btn" id="tuto" style="color:var(--m-ink);font-weight:800">Comment ça marche ?</button></div>
@@ -1198,6 +1198,14 @@ const PROFIL_SECTIONS = [
   { id: 'donnees', icon: 'download', titre: 'Mes données', sous: 'Exporter' }
 ];
 
+function versionsHtml() {
+  const L = S.contenusImportes();
+  if (!L.length) return '<p class="muted small" style="margin:0">Aucun contenu importé pour l’instant.</p>';
+  const quand = (t) => `le ${new Date(t).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })} à ${new Date(t).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })} · `;
+  return `<div class="list">${L.map((c) => `<div class="between"><div style="min-width:0"><b>${esc(c.code)}</b> <span class="small muted">${esc(c.nom)}</span><div class="small muted">${c.importeLe ? quand(c.importeLe) : ''}${plural(c.nbElements, 'question')}</div></div><span class="vtag">${c.revision ? `v${c.revision}` : '—'}</span></div>`).join('')}</div>
+  <p class="muted small" style="margin:8px 0 0">Compare avec le nom du dernier fichier envoyé par Claude (PAT1_contenu_v5 → v5). « — » : importé avant le suivi des versions ; réimporte-le pour l’afficher.</p>`;
+}
+
 async function viewProfil(section) {
   tabbar('#/profil'); setHalo(null);
   const u = S.getUser();
@@ -1226,6 +1234,8 @@ async function viewProfil(section) {
         <label class="btn primary">Choisir des fichiers<input type="file" id="file" accept=".json,application/json" multiple class="sr"></label>
       </div>
       <div id="imp" class="list"></div>`) + card(`
+      <h2 class="section-title">Versions importées</h2>
+      <div id="vers">${versionsHtml()}</div>`) + card(`
       <h2 class="section-title">Invité·es · ${(S.getAcces()?.membres || []).length}</h2>
       <p class="muted small" style="margin:0">Ces personnes voient la même bibliothèque que toi, avec leur propre progression. Elles doivent se connecter avec cette adresse.</p>
       <div class="list">${(S.getAcces()?.membres || []).map((e) => `<div class="between"><span>${esc(e)}</span><button class="flag-btn" data-rm="${esc(e)}">Retirer</button></div>`).join('')}</div>
@@ -1273,8 +1283,9 @@ async function viewProfil(section) {
       try {
         if (!file.name.toLowerCase().endsWith('.json')) throw new Error('Ce n\u2019est pas un fichier .json.');
         const data = JSON.parse(await file.text());
-        const info = await S.importContenu(data); son('ok');
-        out.insertAdjacentHTML('beforeend', `<div class="feedback ok"><b>${esc(info.code)} importé !</b>${plural(info.nbChapitres, 'chapitre')}, ${plural(info.nbElements, 'élément')}. <a href="#/matiere/${encodeURIComponent(info.code)}">Voir ${esc(info.code)}</a></div>`);
+        const info = await S.importContenu(data, file.name); son('ok');
+        const vers = document.getElementById('vers'); if (vers) vers.innerHTML = versionsHtml();
+        out.insertAdjacentHTML('beforeend', `<div class="feedback ok"><b>${esc(info.code)}${info.revision ? ` v${info.revision}` : ''} importé !</b>${plural(info.nbChapitres, 'chapitre')}, ${plural(info.nbElements, 'élément')}. <a href="#/matiere/${encodeURIComponent(info.code)}">Voir ${esc(info.code)}</a></div>`);
       } catch (er) {
         const msg = er instanceof SyntaxError ? 'Le fichier est abîmé ou incomplet.' : er.message;
         out.insertAdjacentHTML('beforeend', `<div class="feedback ko"><b>${esc(file.name)} : import impossible</b>${esc(msg)}</div>`);
