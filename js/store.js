@@ -214,8 +214,9 @@ export function validateContenu(data) {
 export async function importContenu(data) {
   const info = validateContenu(data);
   const code = info.code;
-  await setDoc(contenuRef(code), { matiere: data.matiere, chapitresJson: JSON.stringify(data.chapitres), version: data.version || 1, importeLe: Date.now() });
-  state.contenu[code] = { matiere: data.matiere, chapitres: data.chapitres };
+  const importeLe = Date.now();
+  await setDoc(contenuRef(code), { matiere: data.matiere, chapitresJson: JSON.stringify(data.chapitres), version: data.version || 1, importeLe });
+  state.contenu[code] = { matiere: data.matiere, chapitres: data.chapitres, importeLe };
   // Crée la matière si elle n'existe pas encore (nouveau semestre, nouvelle matière…).
   if (!getMatiere(code)) {
     const m = data.matiere;

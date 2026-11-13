@@ -6,9 +6,9 @@ import {
 } from './firebase.js';
 import * as S from './store.js';
 import { today, isDue, dueDate, nextState, mastery, seenCount, prioritize, shuffle, streak, INTERVALS } from './leitner.js';
-import { TYPES, TYPE_KEYS, NIVEAUX, typeLabel, timeFor, formatOf, checkCourte, sameSet } from './types.js';
+import { TYPES, TYPE_KEYS, NIVEAUX, typeLabel, timeFor, formatOf, checkCourte, sameSet, resolveVariants } from './types.js';
 
-const VERSION = '2.3.0';
+const VERSION = '2.4.0';
 const $app = document.getElementById('app');
 const $tab = document.getElementById('tabbar');
 const $halos = document.getElementById('halos');
@@ -35,7 +35,9 @@ const IC = {
   gear: '<path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/>',
   upload: '<path d="M12 16V4M7 9l5-5 5 5M5 20h14"/>',
   download: '<path d="M12 4v12M7 11l5 5 5-5M5 20h14"/>',
-  copy: '<path d="M9 9h10v10H9zM5 15V5h10"/>'
+  copy: '<path d="M9 9h10v10H9zM5 15V5h10"/>',
+  pause: '<path d="M9 5v14M15 5v14" style="stroke-width:3"/>',
+  play: '<path d="M8 5l11 7-11 7z"/>'
 };
 const ic = (n, cls = 'ic') => `<svg class="${cls}" viewBox="0 0 24 24" aria-hidden="true">${IC[n]}</svg>`;
 const STROOP = { dodo: 'stroop-dodo', contente: 'stroop-contente', sport: 'stroop-sport', fete: 'stroop-fete', etude: 'stroop-etude' };
@@ -283,7 +285,7 @@ async function viewHome() {
   ${verifBanner()}
   ${weekStrip(u.jours)}
   ${saved ? `<button class="cta" id="resume"><span><span class="t">Reprendre ma session</span><span class="s">${esc(saved.code)} · ${saved.i}/${saved.ids.length} · là où tu t’étais arrêté·e</span></span><span class="go">${ic('arrow')}</span></button>` : ''}
-  ${best || !S.isAdmin() ? (best ? `<button class="cta" id="daily" ${todo ? '' : 'disabled'}><span><span class="t">Session du jour</span><span class="s">${todo ? `${esc(best.m.code)} · ${plural(todo, 'carte')} · environ ${Math.max(2, Math.round(todo / 2))} min` : 'Rien à revoir pour l’instant'}</span></span><span class="go">${ic('arrow')}</span></button>` : '') : `<a class="cta" href="#/profil"><span><span class="t">Importer du contenu</span><span class="s">Ajoute ton premier fichier de révisions</span></span><span class="go">${ic('arrow')}</span></a>`}
+  ${best || !S.isAdmin() ?  (best ? `<button class="cta cta-m c-${best.m.couleur}" id="daily" ${todo ? '' : 'disabled'}><span><span class="t">Session du jour</span><span class="s">${todo ? `${esc(best.m.code)} · ${plural(todo, 'carte')} · environ ${Math.max(2, Math.round(todo / 2))} min` : 'Rien à revoir pour l’instant'}</span></span><span class="go">${ic('arrow')}</span></button>` : '') : `<a class="cta" href="#/profil"><span><span class="t">Importer du contenu</span><span class="s">Ajoute ton premier fichier de révisions</span></span><span class="go">${ic('arrow')}</span></a>`}
   ${exams.length ? `<div class="row" style="flex-wrap:wrap">${exams.slice(0, 3).map((o) => `<span class="chip m c-${o.x.m.couleur}">${esc(o.x.m.code)} · ${daysUntil(o.e.t) === 0 ? 'aujourd’hui' : 'J-' + daysUntil(o.e.t)}</span>`).join('')}</div>` : ''}
   <div class="between"><h2 class="section-title">Mes matières</h2><span class="small muted">${esc(semestreLabel(u.semestre))}</span></div>
   <div class="subjects">
@@ -378,7 +380,8 @@ async function viewMatiere(code) {
     <div class="c-${m.couleur}" style="display:flex;flex-direction:column;gap:16px">
       <div class="mat-head">
         <div style="min-width:0"><div class="code">${esc(m.code)}</div><b>${esc(m.nom)}</b>
-          <div class="small muted">Vu : ${x.vus}/${x.total} · ${plural(x.erreurs, 'erreur')} à revoir${ex ? ` · examen J-${daysUntil(ex.t)}` : ''}</div></div>
+          <div class="small muted">Vu : ${x.vus}/${x.total} · ${plural(x.erreurs, 'erreur')} à revoir${ex ? ` · examen J-${daysUntil(ex.t)}` : ''}</div>
+          ${x.contenu.importeLe ? `<div class="small muted" style="opacity:.75">Contenu mis à jour le ${new Date(x.contenu.importeLe).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long' })} à ${new Date(x.contenu.importeLe).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}</div>` : ''}</div>
         <button class="ring" id="ringinfo" aria-label="Maîtrise ${x.maitrise} %, comment c’est calculé" style="border:none;background:conic-gradient(var(--m-acc) 0 ${x.maitrise}%, var(--ghost) ${x.maitrise}% 100%)"><div><b>${pct(x.maitrise)}</b><small>maîtrise ⓘ</small></div></button>
       </div>
       <div class="between"><h2 class="section-title">Mes boîtes</h2><button class="flag-btn" id="tuto" style="color:var(--m-ink);font-weight:800">Comment ça marche ?</button></div>
@@ -430,7 +433,8 @@ async function viewMatiere(code) {
   if (!localStorage.getItem('stroop-tuto-leitner')) { localStorage.setItem('stroop-tuto-leitner', '1'); leitnerTuto(m); }
 }
 
-const itemLabel = (it) => it.recto || it.question || it.affirmation || it.scenario || '';
+const v1 = (v) => (Array.isArray(v) ? v[0] : v);
+const itemLabel = (it) => v1(it.recto) || v1(it.question) || v1(it.affirmation) || v1(it.scenario) || '';
 
 function boxSheet(m, x, b) {
   const its = x.items.filter((it) => (x.prog[it.id]?.box || 0) === b)
@@ -622,6 +626,8 @@ let timerId = null, qTimerId = null;
 async function viewSession() {
   noTab();
   if (!session) { const s = loadSaved(); if (s) session = s; else return go('#/'); }
+  if (session.pausedAt) session.pausedAt = null;
+  document.querySelector('.pause-ov')?.remove();
   const m = S.getMatiere(session.code); setHalo(m.couleur);
   const contenu = await S.getContenu(session.code);
   const prog = await S.getProgres(session.code);
@@ -639,8 +645,8 @@ async function viewSession() {
     if (session.kind === 'rafale') session.ids = session.ids.concat(shuffle(session.base || session.ids));
     else return finish();
   }
-  const it = byId[session.ids[session.i]];
-  if (!it) { session.i++; return viewSession(); }
+  if (!byId[session.ids[session.i]]) { session.i++; return viewSession(); }
+  const it = resolveVariants(byId[session.ids[session.i]]);
   const pBefore = { ...(prog[it.id] || {}) };
   const fmt = formatOf(it);
   const total = session.kind === 'rafale' ? null : session.ids.length;
@@ -650,17 +656,34 @@ async function viewSession() {
     flipped: false, answered: false, correct: null, pif: false, skip: false, timeout: false,
     picked: new Set(), text: '',
     perm: shuffle((it.choix || []).map((_, i) => i)),
-    order: null, pairs: {}, selLeft: null, rightPerm: null, triPick: {}, triPerm: null,
+    order: null, pairs: {}, sel: null, leftPerm: null, rightPerm: null, triPick: {}, triPerm: null,
     deadline: timed ? Date.now() + timeFor(it) * 1000 : null,
     shownAt: Date.now()
   };
   // temps passé sur la question (plafonné à 3 min pour ne pas compter une appli oubliée ouverte)
   const logTime = () => { if (st.answered) S.addTime(Math.min(Date.now() - st.shownAt, 180000) / 1000); };
   if (fmt === 'ordre') { do { st.order = shuffle(it.items.map((_, i) => i)); } while (it.items.length > 1 && st.order.every((v, i) => v === i)); }
-  if (fmt === 'assoc') st.rightPerm = shuffle(it.paires.map((_, i) => i));
+  if (fmt === 'assoc') { st.leftPerm = shuffle(it.paires.map((_, i) => i)); st.rightPerm = shuffle(it.paires.map((_, i) => i)); }
   if (fmt === 'tri') st.triPerm = shuffle(it.items.map((_, i) => i));
 
   const isChoice = fmt === 'qcu' || fmt === 'qcm';
+  const grade = () => {
+    if (isChoice) return sameSet([...st.picked], it.bonnes);
+    if (fmt === 'ordre') return st.order.every((v, i) => v === i);
+    if (fmt === 'assoc') return it.paires.every((_, l) => Number(st.pairs[l]) === l);
+    if (fmt === 'tri') return it.items.every(([, cat], idx) => st.triPick[idx] === cat);
+    if (fmt === 'courte') { st.text = document.getElementById('rep')?.value || st.text; return checkCourte(st.text, it.reponses); }
+    return false;
+  };
+  // Réponse complète quand le temps s'écoule : elle est validée telle quelle.
+  const complete = () => {
+    if (isChoice) return st.picked.size > 0;
+    if (fmt === 'ordre') return !!st.moved;
+    if (fmt === 'assoc') return Object.keys(st.pairs).length === it.paires.length;
+    if (fmt === 'tri') return Object.keys(st.triPick).length === it.items.length;
+    if (fmt === 'courte') return !!(document.getElementById('rep')?.value || st.text).trim();
+    return false;
+  };
   const answer = async (correct, extra = {}) => {
     if (st.answered) return;
     st.answered = true; st.correct = correct;
@@ -687,6 +710,7 @@ async function viewSession() {
     <div class="sess-top">
       <button class="icon-btn" id="quit" aria-label="Quitter la session">${ic('close')}</button>
       <span class="bar"><span id="pbar" style="width:${progress}%"></span></span>
+      <button class="icon-btn" id="pause" aria-label="Pause">${ic('pause')}</button>
       <span class="timer" id="tim">${total ? `${session.i + 1} / ${total}` : session.endsAt <= Date.now() ? 'Dernière !' : fmtTime(session.endsAt - Date.now())}</span>
     </div>
     <div class="row" style="flex-wrap:wrap"><span class="chip m">${esc(m.code)} · ${esc(shortChap(it.chapitreTitre))}</span><span class="chip">${esc(typeLabel(it.type))}</span><span class="chip">${pBefore.box ? 'Boîte ' + pBefore.box : 'Nouveau'}</span>${session.kind === 'rafale' ? `<span class="chip">${ic('bolt')} ${session.results.length}</span>` : ''}</div>
@@ -699,7 +723,7 @@ async function viewSession() {
   };
   const feedback = (extraHtml = '') => {
     if (!st.answered) return '';
-    const title = st.timeout ? 'Temps écoulé !' : st.skip ? 'Pas de souci, on la reverra.' : st.correct ? 'Bien joué !' : 'Pas tout à fait.';
+    const title = st.timeout ? (st.autoValid ? (st.correct ? 'Temps écoulé, mais ta réponse était juste !' : 'Temps écoulé : ta réponse a été validée telle quelle.') : 'Temps écoulé !') : st.skip ? 'Pas de souci, on la reverra.' : st.correct ? 'Bien joué !' : 'Pas tout à fait.';
     return `<div class="feedback ${st.correct ? 'ok' : 'ko'}" role="status"><b>${title}</b>${extraHtml}${esc(it.explication || '')}${figureHtml(it.figureCorrection)}${boxNote()}
       ${!st.correct ? ficheLink() : ''}</div>`;
   };
@@ -785,16 +809,19 @@ async function viewSession() {
     } else if (fmt === 'assoc') {
       const colors = ['#FF9A52', '#5F98EC', '#58BF82', '#9C7DEB', '#EE79A9', '#EBC03F', '#4FC3C7', '#B08968'];
       const rightToLeft = Object.fromEntries(Object.entries(st.pairs).map(([l, r]) => [r, l]));
-      body = `<h2 class="qt">${qText}</h2><p class="small muted" style="margin:0">Touche un élément à gauche, puis son partenaire à droite.</p>
+      const pairNo = {}; Object.keys(st.pairs).forEach((l) => { pairNo[l] = Math.max(0, (st.pairOrder || []).indexOf(Number(l))); });
+      const dot = (l) => `<span class="adot" style="background:${colors[pairNo[l] % colors.length]}">${pairNo[l] + 1}</span>`;
+      const isSel = (side, i) => st.sel && st.sel.side === side && st.sel.i === i;
+      body = `<h2 class="qt">${qText}</h2><p class="small muted" style="margin:0">Touche deux éléments, un dans chaque colonne, pour les associer. Touche une paire pour la défaire.</p>
         <div class="assoc">
-          <div class="list">${it.paires.map((p, l) => {
+          <div class="list">${st.leftPerm.map((l) => {
             const r = st.pairs[l]; const paired = r !== undefined;
             const ok = st.answered ? Number(r) === l : null;
-            return `<button class="aitem ${st.selLeft === l ? 'sel' : ''} ${ok === true ? 'ok' : ok === false ? 'ko' : ''}" data-left="${l}" ${st.answered ? 'disabled' : ''}>${paired ? `<span class="adot" style="background:${colors[l % colors.length]}">${l + 1}</span>` : ''}${esc(p[0])}</button>`;
+            return `<button class="aitem ${isSel('l', l) ? 'sel' : ''} ${ok === true ? 'ok' : ok === false ? 'ko' : ''}" data-left="${l}" ${st.answered ? 'disabled' : ''}>${paired ? dot(l) : ''}${esc(it.paires[l][0])}</button>`;
           }).join('')}</div>
           <div class="list">${st.rightPerm.map((r) => {
             const l = rightToLeft[r];
-            return `<button class="aitem right" data-right="${r}" ${st.answered ? 'disabled' : ''}>${l !== undefined ? `<span class="adot" style="background:${colors[l % colors.length]}">${Number(l) + 1}</span>` : ''}${esc(it.paires[r][1])}</button>`;
+            return `<button class="aitem right ${isSel('r', r) ? 'sel' : ''}" data-right="${r}" ${st.answered ? 'disabled' : ''}>${l !== undefined ? dot(l) : ''}${esc(it.paires[r][1])}</button>`;
           }).join('')}</div>
         </div>
         ${st.answered && !st.correct ? `<div class="card" style="padding:12px"><b class="small">Les bonnes paires</b><ul class="small" style="margin:6px 0 0;padding-left:18px">${it.paires.map((p) => `<li>${esc(p[0])} → ${esc(p[1])}</li>`).join('')}</ul></div>` : ''}`;
@@ -825,26 +852,21 @@ async function viewSession() {
       render();
     });
     $app.querySelectorAll('[data-vf]').forEach((b) => b.onclick = async () => { st.pickedVf = b.dataset.vf === 'true'; await answer(st.pickedVf === it.vrai); render(); });
-    $app.querySelectorAll('[data-up]').forEach((b) => b.onclick = () => { const p = Number(b.dataset.up); [st.order[p - 1], st.order[p]] = [st.order[p], st.order[p - 1]]; render(); });
-    $app.querySelectorAll('[data-down]').forEach((b) => b.onclick = () => { const p = Number(b.dataset.down); [st.order[p + 1], st.order[p]] = [st.order[p], st.order[p + 1]]; render(); });
-    $app.querySelectorAll('[data-left]').forEach((b) => b.onclick = () => {
-      const l = Number(b.dataset.left);
-      if (st.pairs[l] !== undefined) delete st.pairs[l];
-      st.selLeft = l;
-      render();
-    });
-    $app.querySelectorAll('[data-right]').forEach((b) => b.onclick = () => {
-      const r = Number(b.dataset.right);
-      if (st.selLeft === null) {
-        const l = Object.keys(st.pairs).find((k) => st.pairs[k] === r);
-        if (l !== undefined) { delete st.pairs[l]; render(); }
-        return;
+    $app.querySelectorAll('[data-up]').forEach((b) => b.onclick = () => { const p = Number(b.dataset.up); [st.order[p - 1], st.order[p]] = [st.order[p], st.order[p - 1]]; st.moved = true; render(); });
+    $app.querySelectorAll('[data-down]').forEach((b) => b.onclick = () => { const p = Number(b.dataset.down); [st.order[p + 1], st.order[p]] = [st.order[p], st.order[p + 1]]; st.moved = true; render(); });
+    const isSame = (sel, side, i) => sel && sel.side === side && sel.i === i;
+    const tapAssoc = (side, i) => {
+      const l0 = side === 'l' ? i : Object.keys(st.pairs).map(Number).find((k) => Number(st.pairs[k]) === i);
+      if (l0 !== undefined && st.pairs[l0] !== undefined) {
+        delete st.pairs[l0]; st.pairOrder = (st.pairOrder || []).filter((x) => x !== l0); st.sel = null; return render();
       }
-      for (const k of Object.keys(st.pairs)) if (st.pairs[k] === r) delete st.pairs[k];
-      st.pairs[st.selLeft] = r; st.selLeft = null;
-      const next = it.paires.findIndex((_, i) => st.pairs[i] === undefined); st.selLeft = next >= 0 ? next : null;
+      if (!st.sel || st.sel.side === side) { st.sel = isSame(st.sel, side, i) ? null : { side, i }; return render(); }
+      const l = side === 'l' ? i : st.sel.i, r = side === 'r' ? i : st.sel.i;
+      st.pairs[l] = r; st.pairOrder = [...(st.pairOrder || []), l]; st.sel = null;
       render();
-    });
+    };
+    $app.querySelectorAll('[data-left]').forEach((b) => b.onclick = () => tapAssoc('l', Number(b.dataset.left)));
+    $app.querySelectorAll('[data-right]').forEach((b) => b.onclick = () => tapAssoc('r', Number(b.dataset.right)));
     $app.querySelectorAll('[data-tri]').forEach((b) => b.onclick = () => { st.triPick[Number(b.dataset.tri)] = Number(b.dataset.cat); render(); });
     const rep = document.getElementById('rep');
     if (rep && !st.answered) {
@@ -853,15 +875,7 @@ async function viewSession() {
       setTimeout(() => rep.focus(), 30);
     }
     const val = document.getElementById('val');
-    if (val) val.onclick = async () => {
-      let ok = false;
-      if (isChoice) ok = sameSet([...st.picked], it.bonnes);
-      else if (fmt === 'ordre') ok = st.order.every((v, i) => v === i);
-      else if (fmt === 'assoc') ok = it.paires.every((_, l) => Number(st.pairs[l]) === l);
-      else if (fmt === 'tri') ok = it.items.every(([, cat], idx) => st.triPick[idx] === cat);
-      else if (fmt === 'courte') { st.text = document.getElementById('rep')?.value || st.text; ok = checkCourte(st.text, it.reponses); }
-      await answer(ok); render();
-    };
+    if (val) val.onclick = async () => { await answer(grade()); render(); };
     document.getElementById('skip')?.addEventListener('click', async () => { st.skip = true; await answer(false, { skip: true }); render(); });
     document.getElementById('next')?.addEventListener('click', advance);
     document.getElementById('pif')?.addEventListener('click', togglePif);
@@ -877,6 +891,20 @@ async function viewSession() {
       session = null; go('#/');
     };
     document.getElementById('flag').onclick = () => flagSheet(session.code, it);
+    document.getElementById('pause').onclick = () => {
+      session.pausedAt = Date.now();
+      const ov = document.createElement('div');
+      ov.className = 'pause-ov';
+      ov.innerHTML = `<div class="pause-box">${stroopImg('dodo')}<h2>En pause</h2><p class="muted" style="margin:0">Le chrono est arrêté. Prends ton temps !</p><button class="btn primary" id="resumeP">${ic('play')}Reprendre</button></div>`;
+      document.body.appendChild(ov);
+      ov.querySelector('#resumeP').onclick = () => {
+        const d = Date.now() - session.pausedAt; session.pausedAt = null;
+        if (st.deadline) st.deadline += d;
+        st.shownAt += d;
+        if (session.endsAt) session.endsAt += d;
+        ov.remove();
+      };
+    };
     document.getElementById('fiche')?.addEventListener('click', () => ficheSheet(m, chapById[it.chapitre], it.section));
   }
 
@@ -885,14 +913,20 @@ async function viewSession() {
     const totalMs = timeFor(it) * 1000;
     qTimerId = setInterval(async () => {
       if (st.answered) return clearInterval(qTimerId);
+      if (session?.pausedAt) return;
       const left = st.deadline - Date.now();
       const b = document.getElementById('qbar');
       if (b) { b.style.width = Math.max(0, (left / totalMs) * 100) + '%'; b.classList.toggle('late', left < 5000); }
-      if (left <= 0) { clearInterval(qTimerId); st.timeout = true; await answer(false, { timeout: true }); render(); }
+      if (left <= 0) {
+        clearInterval(qTimerId); st.timeout = true;
+        if (complete()) { st.autoValid = true; await answer(grade(), { timeout: true }); } else await answer(false, { timeout: true });
+        render();
+      }
     }, 200);
   }
   if (session.kind === 'rafale') {
     timerId = setInterval(() => {
+      if (!session || session.pausedAt) return;
       const left = session.endsAt - Date.now();
       const t = document.getElementById('tim'); const b = document.getElementById('pbar');
       if (t) t.textContent = fmtTime(left);
@@ -943,7 +977,7 @@ function bindSwipe(card, onSwipe) {
 }
 
 function flagSheet(code, it) {
-  const label = it.recto || it.question || it.affirmation || it.scenario || '';
+  const label = itemLabel(it);
   const sh = openSheet(`
     <div class="between"><h2>Signaler</h2><button class="icon-btn" data-close aria-label="Fermer">${ic('close')}</button></div>
     <p class="muted small" style="margin:0">${esc(label)}</p>
@@ -1070,7 +1104,7 @@ async function viewProfil() {
     </div>`}
     <div class="card" style="padding:16px;display:flex;flex-direction:column;gap:12px">
       <h2 class="section-title">Signalements · ${flags.length}</h2>
-      ${flags.length ? `<div class="list">${flags.map((f) => `<div class="between" style="align-items:flex-start"><div><b class="small">${esc(f.matiere)} · ${esc(f.item.id)}</b><div class="small muted">${esc(f.item.recto || f.item.question)}</div>${f.flag.note ? `<div class="small">« ${esc(f.flag.note)} »</div>` : ''}</div><button class="flag-btn" data-unflag="${esc(f.matiere)}|${esc(f.item.id)}">Retirer</button></div>`).join('')}</div>
+      ${flags.length ? `<div class="list">${flags.map((f) => `<div class="between" style="align-items:flex-start"><div><b class="small">${esc(f.matiere)} · ${esc(f.item.id)}</b><div class="small muted">${esc(itemLabel(f.item))}</div>${f.flag.note ? `<div class="small">« ${esc(f.flag.note)} »</div>` : ''}</div><button class="flag-btn" data-unflag="${esc(f.matiere)}|${esc(f.item.id)}">Retirer</button></div>`).join('')}</div>
       <button class="btn plain block" id="copyflags">${ic('copy')}Copier pour Claude</button>` : '<p class="muted small" style="margin:0">Aucun signalement. Pendant une session, touche « Signaler » sous une carte qui te semble fausse.</p>'}
     </div>
     <button class="card cfg-card" id="tutoP"><span><b>Comment fonctionne la boîte de Leitner ?</b><span class="small muted" style="display:block">Le petit tuto des 5 boîtes</span></span>${ic('next')}</button>
@@ -1114,7 +1148,7 @@ async function viewProfil() {
   }
   $app.querySelectorAll('[data-unflag]').forEach((b) => b.onclick = async () => { const [c, id] = b.dataset.unflag.split('|'); await S.unflagItem(c, id); viewProfil(); });
   document.getElementById('copyflags')?.addEventListener('click', async () => {
-    const txt = 'Signalements de mon appli de révisions :\n\n' + flags.map((f) => `- ${f.matiere} · ${f.item.id} · « ${f.item.recto || f.item.question} »${f.flag.note ? ` → ${f.flag.note}` : ''}`).join('\n');
+    const txt = 'Signalements de mon appli de révisions :\n\n' + flags.map((f) => `- ${f.matiere} · ${f.item.id} · « ${itemLabel(f.item)} »${f.flag.note ? ` → ${f.flag.note}` : ''}`).join('\n');
     try { await navigator.clipboard.writeText(txt); toast('Copié ! Colle-le dans ta conversation avec Claude'); } catch { toast('Copie impossible sur cet appareil'); }
   });
   document.getElementById('tutoP').onclick = () => leitnerTuto(null);

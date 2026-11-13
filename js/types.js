@@ -16,10 +16,29 @@ export const typeLabel = (k) => (TYPES.find((t) => t.key === k) || {}).short || 
 
 export const NIVEAUX = { 1: 'Facile', 2: 'Moyen', 3: 'Difficile' };
 
-/** Temps de réponse (secondes) selon la difficulté : 20 s, 40 s, 60 s. */
+/** Temps de réponse (secondes) : 20 / 40 / 60 s selon la difficulté, plus du temps
+ *  selon la forme (paires, éléments à classer) et la longueur du texte à lire. */
 export function timeFor(it) {
   const n = it.niveau || 1;
-  return n >= 3 ? 60 : n === 2 ? 40 : 20;
+  let t = n >= 3 ? 60 : n === 2 ? 40 : 20;
+  const f = formatOf(it);
+  if (f === 'assoc') t += 7 * (it.paires?.length || 0);
+  else if (f === 'tri') t += 5 * (it.items?.length || 0);
+  else if (f === 'ordre') t += 5 * (it.items?.length || 0);
+  else if (f === 'qcm') t += 10;
+  const txt = [it.scenario, it.question, it.affirmation, ...(it.choix || []), ...(it.items || []).map((x) => (Array.isArray(x) ? x[0] : x)), ...(it.paires || []).flat()]
+    .filter((x) => typeof x === 'string').join(' ');
+  t += Math.max(0, txt.length - 150) / 15; // ≈ temps de lecture
+  return Math.min(180, Math.ceil(t / 5) * 5);
+}
+
+/** Choisit une formulation au hasard quand un champ en propose plusieurs (tableau de variantes). */
+export function resolveVariants(it) {
+  const pick = (v) => (Array.isArray(v) ? v[Math.floor(Math.random() * v.length)] : v);
+  const out = { ...it };
+  for (const k of ['question', 'affirmation', 'scenario', 'recto', 'verso']) if (Array.isArray(out[k])) out[k] = pick(out[k]);
+  if (Array.isArray(out.choix)) out.choix = out.choix.map(pick);
+  return out;
 }
 
 /** Format effectif d'une question (un cas pratique emprunte le format de sa question). */
