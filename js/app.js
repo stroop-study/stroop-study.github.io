@@ -8,7 +8,7 @@ import * as S from './store.js';
 import { today, isDue, dueDate, nextState, mastery, seenCount, prioritize, shuffle, streak, INTERVALS } from './leitner.js';
 import { TYPES, TYPE_KEYS, NIVEAUX, typeLabel, timeFor, formatOf, checkCourte, sameSet } from './types.js';
 
-const VERSION = '2.2.0';
+const VERSION = '2.3.0';
 const $app = document.getElementById('app');
 const $tab = document.getElementById('tabbar');
 const $halos = document.getElementById('halos');
@@ -20,7 +20,7 @@ let lastRecap = null;
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const IC = {
   home: '<path d="M4 11l8-7 8 7v8a1 1 0 0 1-1 1h-4v-6H9v6H5a1 1 0 0 1-1-1z"/>',
-  book: '<path d="M4 5.5A1.5 1.5 0 0 1 5.5 4H10v16H5.5A1.5 1.5 0 0 1 4 18.5zM14 4h4.5A1.5 1.5 0 0 1 20 5.5v13a1.5 1.5 0 0 1-1.5 1.5H14z"/>',
+  book: '<path d="M12 6.5C10.3 5.2 7.6 4.6 4 4.8v13.4c3.6-.2 6.3.4 8 1.8 1.7-1.4 4.4-2 8-1.8V4.8c-3.6-.2-6.3.4-8 1.7zM12 6.5V20"/>',
   chart: '<path d="M5 20V12M12 20V5M19 20v-9"/>',
   user: '<path d="M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM5 20a7 7 0 0 1 14 0"/>',
   arrow: '<path d="M5 12h14M13 6l6 6-6 6"/>',
@@ -254,7 +254,8 @@ async function viewHome() {
   const u = S.getUser();
   const all = await Promise.all(S.matieres().map(matiereStats));
   const s = streak(u.jours); const fait = u.jours[today()] || 0;
-  const mood = !fait ? 'dodo' : s >= 5 ? 'sport' : 'contente';
+  const minutes = Math.floor((u.temps?.[today()] || 0) / 60);
+  const mood = !fait ? 'dodo' : minutes >= 15 ? 'sport' : 'contente';
   const avecContenu = all.filter((x) => x.contenu);
   const best = [...avecContenu].sort((a, b) => (b.due + b.neufs) - (a.due + a.neufs))[0];
   const todo = best ? Math.min(12, best.due + best.neufs) : 0;
@@ -262,7 +263,7 @@ async function viewHome() {
   let bubble;
   if (!avecContenu.length) bubble = S.isAdmin() ? 'Zzz… Importe ton premier contenu dans Profil et on commence !' : 'Zzz… Le contenu n’est pas encore arrivé. Je fais une petite sieste en attendant.';
   else if (mood === 'dodo') bubble = s ? `Zzz… Ta série de ${plural(s, 'jour')} m’attend. Une carte suffit à me réveiller !` : 'Zzz… Une seule carte suffit pour me réveiller.';
-  else if (mood === 'sport') bubble = `${s} jours d’affilée ! Super Stroop est à fond, on continue ?`;
+  else if (mood === 'sport') bubble = `${minutes} min de révision aujourd’hui ! Super Stroop est à fond${s > 1 ? `, et ta série monte à ${s} jours` : ''}.`;
   else bubble = todo ? 'Journée validée ! On s’en refait une petite ?' : 'Journée validée, et tout est à jour. Bravo !';
 
   const exams = all.map((x) => ({ x, e: nextExam(x.m) })).filter((o) => o.e).sort((a, b) => a.e.t - b.e.t);
@@ -390,7 +391,7 @@ async function viewMatiere(code) {
       <div class="between"><h2 class="section-title">Chapitres à réviser</h2><button class="flag-btn" id="all" style="color:var(--m-ink);font-weight:800">${all ? 'Tout décocher' : 'Tout cocher'}</button></div>
       <div class="list">
         ${chaps.map((c, ci) => {
-          const partHead = c.partie && c.partie !== chaps[ci - 1]?.partie ? `<div class="partie-head"><span>${esc(PARTIES[c.partie] || c.partie)}</span><button class="flag-btn" data-partie="${esc(c.partie)}" style="color:var(--m-ink);font-weight:800">${chaps.filter((k) => k.partie === c.partie).every((k) => st.sel.has(k.id)) ? 'Décocher' : 'Cocher'}</button></div>` : '';
+          const partHead = c.partie && c.partie !== chaps[ci - 1]?.partie ? `<div class="partie-head"><span>${esc(PARTIES[c.partie] || c.partie)}</span><button class="flag-btn" data-partie="${esc(c.partie)}" style="color:var(--m-ink);font-weight:800">${chaps.filter((k) => k.partie === c.partie).every((k) => st.sel.has(k.id)) ? 'Tout décocher' : 'Tout cocher'}</button></div>` : '';
           const ids = c.elements.map((e) => e.id); const mm = mastery(ids, x.prog); const vus = seenCount(ids, x.prog);
           return `${partHead}<div class="chaprow">
             <button class="chap" data-chap="${esc(c.id)}" aria-pressed="${st.sel.has(c.id)}">
@@ -650,8 +651,11 @@ async function viewSession() {
     picked: new Set(), text: '',
     perm: shuffle((it.choix || []).map((_, i) => i)),
     order: null, pairs: {}, selLeft: null, rightPerm: null, triPick: {}, triPerm: null,
-    deadline: timed ? Date.now() + timeFor(it) * 1000 : null
+    deadline: timed ? Date.now() + timeFor(it) * 1000 : null,
+    shownAt: Date.now()
   };
+  // temps passé sur la question (plafonné à 3 min pour ne pas compter une appli oubliée ouverte)
+  const logTime = () => { if (st.answered) S.addTime(Math.min(Date.now() - st.shownAt, 180000) / 1000); };
   if (fmt === 'ordre') { do { st.order = shuffle(it.items.map((_, i) => i)); } while (it.items.length > 1 && st.order.every((v, i) => v === i)); }
   if (fmt === 'assoc') st.rightPerm = shuffle(it.paires.map((_, i) => i));
   if (fmt === 'tri') st.triPerm = shuffle(it.items.map((_, i) => i));
@@ -677,16 +681,16 @@ async function viewSession() {
     const r = session.results[session.results.length - 1]; if (r) { r.after = ns.box; r.practice = ns.practice; }
     render();
   };
-  const advance = () => { clearInterval(qTimerId); session.i++; saveSession(); viewSession(); };
+  const advance = () => { clearInterval(qTimerId); logTime(); session.i++; saveSession(); viewSession(); };
 
   const head = () => `
     <div class="sess-top">
       <button class="icon-btn" id="quit" aria-label="Quitter la session">${ic('close')}</button>
       <span class="bar"><span id="pbar" style="width:${progress}%"></span></span>
-      <span class="timer" id="tim">${total ? `${session.i + 1} / ${total}` : fmtTime(session.endsAt - Date.now())}</span>
+      <span class="timer" id="tim">${total ? `${session.i + 1} / ${total}` : session.endsAt <= Date.now() ? 'Dernière !' : fmtTime(session.endsAt - Date.now())}</span>
     </div>
     <div class="row" style="flex-wrap:wrap"><span class="chip m">${esc(m.code)} · ${esc(shortChap(it.chapitreTitre))}</span><span class="chip">${esc(typeLabel(it.type))}</span><span class="chip">${pBefore.box ? 'Boîte ' + pBefore.box : 'Nouveau'}</span>${session.kind === 'rafale' ? `<span class="chip">${ic('bolt')} ${session.results.length}</span>` : ''}</div>
-    ${timed && !st.answered ? `<div class="qtimer" aria-hidden="true"><span id="qbar"></span></div>` : ''}`;
+    ${timed && !st.answered ? (() => { const left = st.deadline - Date.now(); return `<div class="qtimer" aria-hidden="true"><span id="qbar" class="${left < 5000 ? 'late' : ''}" style="width:${Math.max(0, (left / (timeFor(it) * 1000)) * 100)}%"></span></div>`; })() : ''}`;
 
   const ficheLink = () => {
     const chap = chapById[it.chapitre];
@@ -866,7 +870,7 @@ async function viewSession() {
 
   function bindCommon() {
     document.getElementById('quit').onclick = () => {
-      clearInterval(timerId); clearInterval(qTimerId);
+      clearInterval(timerId); clearInterval(qTimerId); logTime();
       if (session.results.length && session.kind !== 'rafale') { saveSession(); toast('Session gardée : tu pourras la reprendre'); }
       else if (!session.results.length) clearSaved();
       if (session.kind === 'rafale' && session.results.length) return finish();
@@ -893,7 +897,13 @@ async function viewSession() {
       const t = document.getElementById('tim'); const b = document.getElementById('pbar');
       if (t) t.textContent = fmtTime(left);
       if (b) b.style.width = Math.min(100, Math.round(((120000 - left) / 120000) * 100)) + '%';
-      if (left <= 0) finish();
+      if (left <= 0) {
+        // le temps est écoulé : on laisse finir la question en cours, la rafale se termine à la suivante
+        clearInterval(timerId);
+        if (t) t.textContent = 'Dernière !';
+        if (b) b.style.width = '100%';
+        if (!document.querySelector('#next')) toast('Temps écoulé : termine cette question !');
+      }
     }, 500);
   }
 }
@@ -956,7 +966,7 @@ function viewRecap() {
   const titles = { jour: 'Session du jour terminée !', rafale: 'Fin de la rafale !', erreurs: 'Erreurs revues !', normal: 'Session terminée !' };
   const gain = (r.m1 ?? 0) - (r.m0 ?? 0);
   $app.innerHTML = `<section class="recap c-${r.matiere.couleur}">
-    <div class="stroop-zone"><div class="bubble"><span class="who">Stroop</span>${n ? (ok / n >= 0.8 ? 'Wahou, quelle forme ! Je fais la fête.' : ok / n >= 0.5 ? 'Beau travail, ça rentre !' : 'Chaque erreur d’aujourd’hui, c’est une réussite de demain.') : 'On se refait ça bientôt ?'}</div>${stroopImg('fete')}</div>
+    <div class="stroop-zone"><div class="bubble"><span class="who">Stroop</span>${n ? (ok / n >= 0.8 ? 'Wahou, quelle forme ! Je fais la fête.' : ok / n >= 0.5 ? 'Beau travail, ça rentre !' : 'Chaque erreur d’aujourd’hui, c’est une réussite de demain.') : 'On se refait ça bientôt ?'}</div>${stroopImg(n && ok / n < 0.5 ? 'etude' : 'fete')}</div>
     <h1>${titles[r.kind] || titles.normal}</h1>
     <div class="stats">
       <div class="stat"><b>${n}</b><span>réponses</span></div>

@@ -41,6 +41,7 @@ export async function loadUser(uid, displayName, email) {
     await setDoc(userRef(), state.user);
   }
   state.user.jours = state.user.jours || {};
+  state.user.temps = state.user.temps || {};
   state.user.matieres = state.user.matieres || [];
   return state.user;
 }
@@ -135,6 +136,14 @@ export async function getProgres(code) {
   const snap = await getDoc(progresRef(code));
   state.progres[code] = (snap.exists() && snap.data().items) || {};
   return state.progres[code];
+}
+
+/** Ajoute du temps de révision (en secondes) à la journée. */
+export function addTime(sec) {
+  if (!(sec > 0)) return;
+  const j = today();
+  state.user.temps[j] = Math.round((state.user.temps[j] || 0) + sec);
+  setDoc(userRef(), { temps: { [j]: state.user.temps[j] } }, { merge: true }).catch(console.error);
 }
 
 /** Enregistre la réponse à un élément et valide la journée. */
