@@ -5,10 +5,10 @@ import {
   sendEmailVerification, signInWithEmailAndPassword, createUserWithEmailAndPassword, sendPasswordResetEmail, signOut
 } from './firebase.js';
 import * as S from './store.js';
-import { today, isDue, dueDate, nextState, mastery, seenCount, prioritize, shuffle, streak, INTERVALS } from './leitner.js';
+import { today, isDue, dueDate, nextState, mastery, notionStats, seenCount, prioritize, shuffle, streak, INTERVALS } from './leitner.js';
 import { TYPES, TYPE_KEYS, NIVEAUX, typeLabel, timeFor, formatOf, checkCourte, sameSet, resolveVariants } from './types.js';
 
-const VERSION = '2.4.0';
+const VERSION = '2.5.0';
 const $app = document.getElementById('app');
 const $tab = document.getElementById('tabbar');
 const $halos = document.getElementById('halos');
@@ -94,7 +94,7 @@ async function route() {
     $app.innerHTML = `<div class="card empty"><p><b>Oups, un souci.</b></p><p class="muted small">${esc(e.message)}</p><a class="btn plain" href="#/">Revenir à l'accueil</a></div>`;
   }
 }
-window.addEventListener('hashchange', route);
+window.addEventListener('hashchange', () => { document.querySelectorAll('.sheet-back, .pause-ov').forEach((e) => e.remove()); route(); });
 
 /* ================= Connexion ================= */
 const GOOGLE_SVG = '<svg width="20" height="20" viewBox="0 0 48 48" aria-hidden="true"><path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3C33.7 32.7 29.2 36 24 36c-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.8 1.2 7.9 3.1l5.7-5.7C34 6.1 29.3 4 24 4 12.9 4 4 12.9 4 24s8.9 20 20 20 20-8.9 20-20c0-1.3-.1-2.4-.4-3.5z"/><path fill="#FF3D00" d="M6.3 14.7l6.6 4.8C14.7 15.1 19 12 24 12c3.1 0 5.8 1.2 7.9 3.1l5.7-5.7C34 6.1 29.3 4 24 4 16.3 4 9.7 8.3 6.3 14.7z"/><path fill="#4CAF50" d="M24 44c5.2 0 9.9-2 13.4-5.2l-6.2-5.2C29.2 35.1 26.7 36 24 36c-5.2 0-9.6-3.3-11.3-8l-6.5 5C9.5 39.6 16.2 44 24 44z"/><path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3c-.8 2.2-2.2 4.2-4.1 5.6l6.2 5.2C37 39.2 44 34 44 24c0-1.3-.1-2.4-.4-3.5z"/></svg>';
@@ -194,7 +194,7 @@ async function matiereStats(m) {
     if (!p || !p.box) neufs++; else if (isDue(p)) due++;
     if (p?.err) erreurs++;
   }
-  return { m, contenu, prog, items, total: items.length, due, neufs, maitrise: mastery(ids, prog), erreurs, vus: seenCount(ids, prog) };
+  return { m, contenu, prog, items, total: items.length, due, neufs, maitrise: mastery(items, prog), erreurs, vus: seenCount(ids, prog) };
 }
 
 function nextExam(m) {
@@ -395,7 +395,7 @@ async function viewMatiere(code) {
       <div class="list">
         ${chaps.map((c, ci) => {
           const partHead = c.partie && c.partie !== chaps[ci - 1]?.partie ? `<div class="partie-head"><span>${esc(PARTIES[c.partie] || c.partie)}</span><button class="flag-btn" data-partie="${esc(c.partie)}" style="color:var(--m-ink);font-weight:800">${chaps.filter((k) => k.partie === c.partie).every((k) => st.sel.has(k.id)) ? 'Tout décocher' : 'Tout cocher'}</button></div>` : '';
-          const ids = c.elements.map((e) => e.id); const mm = mastery(ids, x.prog); const vus = seenCount(ids, x.prog);
+          const ids = c.elements.map((e) => e.id); const mm = mastery(c.elements, x.prog); const vus = seenCount(ids, x.prog);
           return `${partHead}<div class="chaprow">
             <button class="chap" data-chap="${esc(c.id)}" aria-pressed="${st.sel.has(c.id)}">
               <span class="box" aria-hidden="true"><svg class="ic" viewBox="0 0 24 24">${IC.check}</svg></span>
@@ -419,7 +419,7 @@ async function viewMatiere(code) {
     $app.querySelectorAll('[data-fiche]').forEach((b) => b.onclick = () => ficheSheet(m, chaps.find((c) => c.id === b.dataset.fiche)));
     $app.querySelectorAll('[data-partie]').forEach((b) => b.onclick = () => { const p = b.dataset.partie; const cs = chaps.filter((c) => c.partie === p); const on = cs.every((c) => st.sel.has(c.id)); cs.forEach((c) => on ? st.sel.delete(c.id) : st.sel.add(c.id)); render(); });
     document.getElementById('all').onclick = () => { if (all) st.sel.clear(); else chaps.forEach((c) => st.sel.add(c.id)); render(); };
-    document.getElementById('ringinfo').onclick = () => masteryInfo(m);
+    document.getElementById('ringinfo').onclick = () => masteryInfo(m, x);
     document.getElementById('tuto').onclick = () => leitnerTuto(m);
     $app.querySelectorAll('[data-box]').forEach((b) => b.onclick = () => boxSheet(m, x, Number(b.dataset.box)));
     document.getElementById('cfg').onclick = () => cfgSheet(m, x, st, render);
@@ -524,18 +524,29 @@ function ficheSheet(m, chap, sectionId) {
   if (sectionId) setTimeout(() => sh.back.querySelector(`#fs-${CSS.escape(sectionId)}`)?.scrollIntoView({ block: 'start', behavior: 'smooth' }), 60);
 }
 
-function masteryInfo(m) {
+function masteryInfo(m, x) {
+  const { notions } = notionStats(x.items, x.prog);
+  const count = (st) => notions.filter((n) => n.statut === st).length;
+  const LAB = { maitrisee: 'Maîtrisée', encours: 'En cours', revoir: 'À revoir', nouvelle: 'Pas encore vue' };
+  const chaps = x.contenu.chapitres.slice().sort((a, b) => (a.ordre ?? 0) - (b.ordre ?? 0));
+  const list = chaps.map((c) => {
+    const ns = notions.filter((n) => n.chapitre === c.id);
+    if (!ns.length) return '';
+    const done = ns.filter((n) => n.statut === 'maitrisee').length;
+    return `<details class="notions"><summary><span>${esc(c.titre)}</span><span class="small muted">${done}/${ns.length}</span></summary>
+      <ul>${ns.map((n) => `<li><span class="ndot ${n.statut}" aria-hidden="true"></span><span class="nnom">${esc(n.nom)}</span><span class="small muted">${LAB[n.statut]}</span></li>`).join('')}</ul></details>`;
+  }).join('');
   openSheet(`
     <div class="between"><h2>La maîtrise, comment ça marche ?</h2><button class="icon-btn" data-close aria-label="Fermer">${ic('close')}</button></div>
-    <p style="margin:0">Chaque question vaut de 0 à 100 % selon sa boîte de Leitner :</p>
+    <p style="margin:0">Chaque question se rattache à une <b>notion</b>. La maîtrise de la matière, c’est la part des notions que tu sais, pas des questions : une notion bien comprise compte pleinement, même si toutes ses questions ne sont pas encore passées.</p>
     <ul style="margin:0;padding-left:20px;line-height:1.7">
-      <li>jamais vue, ou ratée la dernière fois : <b>0 %</b></li>
-      <li>boîte 1 (réussie une fois) : <b>25 %</b></li>
-      <li>boîte 2 : <b>50 %</b> · boîte 3 : <b>75 %</b></li>
-      <li>boîtes 4 et 5 : <b>100 %</b>, c’est acquis</li>
+      <li>Une notion grimpe avec la boîte de Leitner de ses questions (boîte 1 : 25 %, boîte 2 : 50 %, boîte 3 : 75 %, boîtes 4-5 : 100 %).</li>
+      <li>Elle est <b>maîtrisée</b> quand tu as réussi au moins 2 questions différentes dessus, ou la même à quelques jours d’écart. Avant ça, elle plafonne à 50 %.</li>
+      <li>Une erreur la fait redescendre jusqu’à ce que tu la réussisses à nouveau.</li>
     </ul>
-    <p style="margin:0">La maîtrise de la matière est la moyenne de toutes ses questions, <b>y compris celles que tu n’as pas encore vues</b>. Elle grimpe donc doucement au début, puis vite quand tu reviens réussir les mêmes questions, espacées de quelques jours.</p>
-    <p class="muted small" style="margin:0">Sur chaque chapitre, la barre claire montre ce que tu as déjà vu, la barre foncée ce que tu maîtrises.</p>
+    <h3 class="section-title" style="margin-top:4px">Mes notions</h3>
+    <div class="nlegend small"><span><span class="ndot maitrisee"></span>${count('maitrisee')} maîtrisée${count('maitrisee') > 1 ? 's' : ''}</span><span><span class="ndot encours"></span>${count('encours')} en cours</span><span><span class="ndot revoir"></span>${count('revoir')} à revoir</span><span><span class="ndot nouvelle"></span>${count('nouvelle')} pas vue${count('nouvelle') > 1 ? 's' : ''}</span></div>
+    <div class="list" style="gap:8px">${list}</div>
     <button class="btn primary block" data-close>Compris</button>`, `c-${m.couleur}`);
 }
 const backBtn = () => `<a class="icon-btn" href="#/matieres" aria-label="Retour">${ic('back')}</a>`;
@@ -611,7 +622,7 @@ async function startSession({ code, chapitres = null, kind = 'normal', ids = nul
   }
   if (!items.length) return toast('Rien à réviser avec ces réglages');
   clearSaved();
-  const all = S.flatItems(contenu).map((i) => i.id);
+  const all = S.flatItems(contenu);
   session = {
     code, kind, ids: items.map((i) => i.id), base: items.map((i) => i.id), i: 0, started: Date.now(),
     endsAt: kind === 'rafale' ? Date.now() + 120000 : null,
@@ -637,7 +648,7 @@ async function viewSession() {
 
   const finish = () => {
     clearInterval(timerId); clearInterval(qTimerId); clearSaved();
-    lastRecap = { ...session, matiere: m, m1: mastery(Object.keys(byId), prog) };
+    lastRecap = { ...session, matiere: m, m1: mastery(Object.values(byId), prog) };
     session = null; go('#/recap');
   };
   if (session.kind === 'rafale' && Date.now() >= session.endsAt) return finish();
@@ -1035,9 +1046,21 @@ async function viewProgres() {
     const d = new Date(k); if (prev && (d - prev) / 86400000 === 1) cur++; else cur = 1;
     best = Math.max(best, cur); prev = d;
   }
+  // séries : actuelle (depuis quand) et meilleure (du… au…)
+  let bestStart = null, bestEnd = null, runStart = null; prev = null; cur = 0;
+  for (const k of keys) {
+    if (!u.jours[k]) continue;
+    const dd = new Date(k);
+    if (prev && (dd - prev) / 86400000 === 1) cur++; else { cur = 1; runStart = k; }
+    if (cur >= best && cur) { bestStart = runStart; bestEnd = k; }
+    prev = dd;
+  }
   const totalRep = keys.reduce((a, k) => a + (u.jours[k] || 0), 0);
+  const joursTravailles = keys.filter((k) => u.jours[k]).length;
+  const totalMin = Math.round(Object.values(u.temps || {}).reduce((a, v) => a + v, 0) / 60);
   const all = await Promise.all(S.matieres().map(matiereStats));
-  // 5 dernières semaines
+  const couleurOf = Object.fromEntries(S.matieres().map((m) => [m.code, m.couleur]));
+  // 5 dernières semaines : chaque case prend la couleur de la matière la plus travaillée ce jour-là
   const d = new Date(); const dow = (d.getDay() + 6) % 7; d.setDate(d.getDate() - dow - 28);
   let cal = '';
   for (let w = 0; w < 5; w++) {
@@ -1045,21 +1068,28 @@ async function viewProgres() {
     for (let i = 0; i < 7; i++) {
       const k = today(d); const n = u.jours[k] || 0; const fut = k > today();
       const lvl = n === 0 ? 0 : n < 10 ? 1 : n < 30 ? 2 : 3;
-      const bg = fut ? 'transparent' : ['var(--ghost)', '#FFD9BD', '#FFB27A', '#FF8A3D'][lvl];
-      cal += `<span title="${k} : ${n}" aria-label="${k} : ${plural(n, 'réponse')}" style="aspect-ratio:1;border-radius:10px;background:${bg};${k === today() ? 'outline:2px dashed var(--ink);outline-offset:-2px' : ''}"></span>`;
+      const jm = u.joursM?.[k];
+      const top = jm ? Object.entries(jm).sort((a, b) => b[1] - a[1])[0][0] : null;
+      const col = top && couleurOf[top] ? `var(--${couleurOf[top]}-acc)` : 'var(--muted)';
+      const style = fut ? 'background:transparent' : lvl === 0 ? 'background:var(--ghost)' : `background:${col};opacity:${[0, 0.4, 0.7, 1][lvl]}`;
+      const label = `${k} : ${plural(n, 'réponse')}${top ? ', surtout ' + top : ''}`;
+      cal += `<span title="${esc(label)}" aria-label="${esc(label)}" style="aspect-ratio:1;border-radius:10px;${style};${k === today() ? 'outline:2px dashed var(--ink);outline-offset:-2px' : ''}"></span>`;
       d.setDate(d.getDate() + 1);
     }
     cal += '</div>';
   }
+  const fmtD = (k) => new Date(k).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long' });
+  const usedCols = [...new Set(Object.values(u.joursM || {}).flatMap((jm) => Object.keys(jm)))].filter((c) => couleurOf[c]);
   $app.innerHTML = `<div class="between"><h1>Progrès</h1><img class="stroop small a-etude" src="assets/stroop/stroop-etude.webp" alt="Stroop studieux" style="width:88px;height:88px"></div>
     <div class="stats">
-      <div class="stat"><b>${s}</b><span>série actuelle</span></div>
-      <div class="stat"><b>${best}</b><span>record</span></div>
-      <div class="stat"><b>${totalRep}</b><span>réponses</span></div>
+      <button class="stat" data-stat><b>${s}</b><span>${s > 1 ? 'jours d’affilée' : 'jour d’affilée'}</span></button>
+      <button class="stat" data-stat><b>${best}</b><span>meilleure série</span></button>
+      <button class="stat" data-stat><b>${totalRep}</b><span>${totalRep > 1 ? 'réponses' : 'réponse'}</span></button>
     </div>
     <div class="card" style="padding:14px;display:flex;flex-direction:column;gap:6px">
       <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:6px;text-align:center" class="small muted">${['L', 'M', 'M', 'J', 'V', 'S', 'D'].map((x) => `<span>${x}</span>`).join('')}</div>
       ${cal}
+      ${usedCols.length ? `<div class="nlegend small" style="margin-top:6px">${usedCols.map((c) => `<span><span class="ndot" style="background:var(--${couleurOf[c]}-acc)"></span>${esc(c)}</span>`).join('')}</div>` : ''}
     </div>
     <h2 class="section-title">Par matière</h2>
     <div class="list">${all.filter((x) => x.contenu).map((x) => `
@@ -1068,6 +1098,14 @@ async function viewProgres() {
         <span class="bar"><span style="width:${x.maitrise}%"></span></span>
         <span class="small muted">${x.due} à revoir · ${x.neufs} jamais ${x.neufs > 1 ? 'vus' : 'vu'} · ${plural(x.erreurs, 'erreur')} en attente</span>
       </a>`).join('') || '<div class="card empty muted">Rien pour l’instant : importe du contenu pour commencer.</div>'}</div>`;
+  $app.querySelectorAll('[data-stat]').forEach((b) => b.onclick = () => openSheet(`
+    <div class="between"><h2>Tes chiffres</h2><button class="icon-btn" data-close aria-label="Fermer">${ic('close')}</button></div>
+    <ul class="list" style="list-style:none;margin:0;padding:0;gap:12px">
+      <li><b>Série actuelle : ${plural(s, 'jour')}</b><br><span class="small muted">${s ? `Tu révises chaque jour depuis le ${fmtD(runStart)}. Une réponse dans la journée suffit à la prolonger.` : 'Réponds à une question aujourd’hui pour lancer une série.'}</span></li>
+      <li><b>Meilleure série : ${plural(best, 'jour')}</b><br><span class="small muted">${best && bestStart ? (best > 1 ? `Ton record de jours de révision d’affilée, du ${fmtD(bestStart)} au ${fmtD(bestEnd)}.` : `Ton record de jours de révision d’affilée (le ${fmtD(bestEnd)}).`) : 'Pas encore de série.'}</span></li>
+      <li><b>${plural(totalRep, 'réponse')}</b><br><span class="small muted">Sur ${plural(joursTravailles, 'jour')} de révision${totalMin ? `, pour environ ${totalMin} min de révision depuis le 13 novembre` : ''}.</span></li>
+    </ul>
+    <button class="btn primary block" data-close>OK</button>`));
 }
 
 /* ================= Profil ================= */

@@ -42,6 +42,7 @@ export async function loadUser(uid, displayName, email) {
   }
   state.user.jours = state.user.jours || {};
   state.user.temps = state.user.temps || {};
+  state.user.joursM = state.user.joursM || {};
   state.user.matieres = state.user.matieres || [];
   return state.user;
 }
@@ -151,7 +152,12 @@ export async function recordAnswer(code, id, newState, { countDay = true } = {})
   const prog = await getProgres(code);
   prog[id] = { ...(prog[id] || {}), ...newState };
   const j = today();
-  if (countDay) state.user.jours[j] = (state.user.jours[j] || 0) + 1;
+  if (countDay) {
+    state.user.jours[j] = (state.user.jours[j] || 0) + 1;
+    const jm = (state.user.joursM[j] = state.user.joursM[j] || {});
+    jm[code] = (jm[code] || 0) + 1;
+    setDoc(userRef(), { joursM: { [j]: { [code]: jm[code] } } }, { merge: true }).catch(console.error);
+  }
   // Écritures non bloquantes : hors ligne, Firestore les garde et les envoie plus tard.
   setDoc(progresRef(code), { items: { [id]: prog[id] } }, { merge: true }).catch(console.error);
   setDoc(userRef(), { jours: { [j]: state.user.jours[j] } }, { merge: true }).catch(console.error);

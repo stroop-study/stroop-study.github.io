@@ -62,11 +62,41 @@ export function itemMastery(p) {
   return Math.min(1, p.box / 4);
 }
 
-/** Maîtrise d'un ensemble d'éléments, en %. */
-export function mastery(ids, prog) {
-  if (!ids.length) return 0;
-  const sum = ids.reduce((s, id) => s + itemMastery(prog[id]), 0);
-  return Math.round((sum / ids.length) * 100);
+/**
+ * Maîtrise par notion. Chaque question est rattachée à une notion (champ `notion`) ;
+ * sans notion, la question compte comme une notion à elle seule.
+ * - Une notion jamais abordée vaut 0.
+ * - Sinon : moyenne de la maîtrise des questions DÉJÀ VUES de la notion (les autres ne la font pas baisser).
+ * - Tant que la notion n'est pas confirmée (2 questions différentes réussies, ou une question en boîte 3 ou plus),
+ *   elle est plafonnée à 50 % : une seule bonne réponse peut être un coup de chance.
+ * Statut : 'nouvelle' (jamais vue), 'revoir' (dernière réponse fausse sur une de ses questions),
+ *          'maitrisee' (confirmée et ≥ 75 %), 'encours' sinon.
+ */
+export function notionStats(items, prog) {
+  const groups = new Map();
+  for (const it of items) {
+    const id = typeof it === 'string' ? it : it.id;
+    const key = typeof it === 'string' || !it.notion ? `#${id}` : `${it.chapitre || ''}|${it.notion}`;
+    if (!groups.has(key)) groups.set(key, { nom: typeof it === 'string' ? id : it.notion || id, chapitre: it.chapitre, ids: [] });
+    groups.get(key).ids.push(id);
+  }
+  const notions = [...groups.values()].map((g) => {
+    const seen = g.ids.filter((id) => prog[id]?.seen || prog[id]?.box);
+    if (!seen.length) return { ...g, vus: 0, score: 0, statut: 'nouvelle' };
+    const avg = seen.reduce((a, id) => a + itemMastery(prog[id]), 0) / seen.length;
+    const ok = seen.filter((id) => prog[id]?.box && !prog[id]?.err).length;
+    const confirmed = ok >= 2 || seen.some((id) => (prog[id]?.box || 0) >= 3 && !prog[id]?.err);
+    const score = confirmed ? avg : Math.min(avg, 0.5);
+    const statut = seen.some((id) => prog[id]?.err) ? 'revoir' : confirmed && score >= 0.75 ? 'maitrisee' : 'encours';
+    return { ...g, vus: seen.length, score, statut };
+  });
+  const pctAll = notions.length ? Math.round((notions.reduce((a, n) => a + n.score, 0) / notions.length) * 100) : 0;
+  return { notions, mastery: pctAll };
+}
+
+/** Maîtrise d'un ensemble de questions (objets avec `notion`, ou simples identifiants), en %. */
+export function mastery(items, prog) {
+  return notionStats(items, prog).mastery;
 }
 
 /** Nombre d'éléments déjà vus au moins une fois. */
