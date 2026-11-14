@@ -34,12 +34,12 @@ export function timeFor(it) {
 }
 
 /** Choisit une formulation au hasard quand un champ en propose plusieurs (tableau de variantes). */
-export function resolveVariants(it) {
+export function resolveVariants(it, forced = null) {
   // Un seul tirage par question : les variantes de même rang vont ensemble
   // (scénario n°2 ↔ choix n°2), ce qui permet de varier la situation ET les réponses.
   const champs = ['question', 'affirmation', 'scenario', 'recto', 'verso', 'explication'];
   const tailles = [...champs.map((k) => it[k]), ...(Array.isArray(it.choix) ? it.choix : [])].filter(Array.isArray).map((v) => v.length);
-  const n = tailles.length ? Math.max(...tailles) : 1, idx = Math.floor(Math.random() * n);
+  const n = tailles.length ? Math.max(...tailles) : 1, idx = Number.isInteger(forced) ? forced % n : Math.floor(Math.random() * n);
   const pick = (v) => (Array.isArray(v) ? v[idx % v.length] : v);
   const out = { ...it };
   for (const k of champs) if (Array.isArray(out[k])) out[k] = pick(out[k]);
@@ -90,4 +90,11 @@ export function checkCourte(input, reponses) {
 export function sameSet(a, b) {
   const A = new Set(a), B = new Set(b);
   return A.size === B.size && [...A].every((x) => B.has(x));
+}
+
+/** Nombre de situations différentes d'une question (variantes alignées). */
+export function nbVariantes(it) {
+  const champs = ['question', 'affirmation', 'scenario', 'recto', 'verso', 'explication'];
+  const t = [...champs.map((k) => it[k]), ...(Array.isArray(it.choix) ? it.choix : [])].filter(Array.isArray).map((v) => v.length);
+  return t.length ? Math.max(...t) : 1;
 }

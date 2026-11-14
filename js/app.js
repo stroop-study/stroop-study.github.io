@@ -1,6 +1,7 @@
 // Stroop Study — application principale (routeur + écrans).
 import { figureHtml } from './figures.js';
-import { son, getSons, setSons } from './sons.js';
+import { son, getSons, setSons, setSilence } from './sons.js';
+import * as R from './recherche.js';
 import * as N from './notifs.js';
 import {
   auth, onAuthStateChanged, GoogleAuthProvider, signInWithPopup, signInWithRedirect, getRedirectResult,
@@ -8,9 +9,9 @@ import {
 } from './firebase.js';
 import * as S from './store.js';
 import { today, isDue, dueDate, nextState, mastery, notionStats, seenCount, prioritize, shuffle, streak, INTERVALS } from './leitner.js';
-import { TYPES, TYPE_KEYS, NIVEAUX, typeLabel, timeFor, formatOf, checkCourte, sameSet, resolveVariants } from './types.js';
+import { TYPES, TYPE_KEYS, NIVEAUX, typeLabel, timeFor, formatOf, checkCourte, sameSet, resolveVariants, nbVariantes, normalize } from './types.js';
 
-const VERSION = '2.9.1';
+const VERSION = '2.10.0';
 const $app = document.getElementById('app');
 const $tab = document.getElementById('tabbar');
 const $halos = document.getElementById('halos');
@@ -45,7 +46,9 @@ const IC = {
   paw: '<g fill="currentColor" stroke="none"><ellipse cx="12" cy="15.6" rx="4.6" ry="3.9"/><ellipse cx="6.2" cy="10.4" rx="1.9" ry="2.4"/><ellipse cx="9.6" cy="6.8" rx="1.9" ry="2.5"/><ellipse cx="14.4" cy="6.8" rx="1.9" ry="2.5"/><ellipse cx="17.8" cy="10.4" rx="1.9" ry="2.4"/></g>',
   help: '<path d="M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM9.5 9.5a2.5 2.5 0 1 1 3.5 2.3c-.6.3-1 .9-1 1.6v.6M12 17h.01"/>',
   play: '<path d="M8 5l11 7-11 7z"/>',
-  cards: '<path d="M8 4h11v14H8zM5 7v13h11"/>'
+  cards: '<path d="M8 4h11v14H8zM5 7v13h11"/>',
+  search: '<path d="M10.5 18a7.5 7.5 0 1 0 0-15 7.5 7.5 0 0 0 0 15zM16 16l5 5"/>',
+  moon: '<path d="M20 14.5A8 8 0 0 1 9.5 4 8 8 0 1 0 20 14.5z"/>'
 };
 const ic = (n, cls = 'ic') => `<svg class="${cls}" viewBox="0 0 24 24" aria-hidden="true">${IC[n]}</svg>`;
 const STROOP = { dodo: 'stroop-dodo', contente: 'stroop-contente', sport: 'stroop-sport', fete: 'stroop-fete', etude: 'stroop-etude', arcenciel: 'stroop-arcenciel' };
@@ -101,6 +104,7 @@ async function route() {
   try {
     if (page === 'matiere' && arg) return await viewMatiere(decodeURIComponent(arg));
     if (page === 'matieres') return await viewMatieres();
+    if (page === 'recherche') return viewRecherche(arg ? decodeURIComponent(arg) : null);
     if (page === 'session') return viewSession();
     if (page === 'recap') return viewRecap();
     if (page === 'progres') return await viewProgres();
@@ -361,7 +365,7 @@ async function viewHome() {
   $app.innerHTML = `
   <header class="between hello">
     <div><div class="date">${esc(dateStr.charAt(0).toUpperCase() + dateStr.slice(1))}</div><h1>${hello}${u.prenom ? ' ' + esc(u.prenom) : ''}</h1></div>
-    <span class="chip" aria-label="Série de ${s} jours"><svg class="ic flame" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" stroke="none" d="M12 2c1 3.5 5 5.5 5 10a5 5 0 0 1-10 0c0-2 1-3.5 2-4.5.2 1.7 1 2.7 2 3-.5-3 .3-5.8 1-8.5z"/></svg><b class="title">${s}</b><span class="muted">${s > 1 ? 'jours' : 'jour'}</span></span>
+    <span class="row" style="gap:8px"><a class="icon-btn" href="#/recherche" aria-label="Rechercher une notion">${ic('search')}</a><span class="chip" aria-label="Série de ${s} jours"><svg class="ic flame" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" stroke="none" d="M12 2c1 3.5 5 5.5 5 10a5 5 0 0 1-10 0c0-2 1-3.5 2-4.5.2 1.7 1 2.7 2 3-.5-3 .3-5.8 1-8.5z"/></svg><b class="title">${s}</b><span class="muted">${s > 1 ? 'jours' : 'jour'}</span></span></span>
   </header>
   <div class="stroop-zone">
     <div class="bubble" id="bubble"><span class="who">Stroop</span><span id="btxt">${esc(bubble)}</span></div>
@@ -372,6 +376,7 @@ async function viewHome() {
   ${weekStrip(u.jours, u)}
   ${saved ? `<button class="cta" id="resume"><span><span class="t">Reprendre ma session</span><span class="s">${esc(saved.code)} · ${saved.results?.length || saved.i}/${saved.ids.length} · là où tu t’étais arrêté·e</span></span><span class="go">${ic('arrow')}</span></button>` : ''}
   ${best || !S.isAdmin() ?  (best ? `<button class="cta cta-m c-${best.m.couleur}" id="daily" ${todo ? '' : 'disabled'}><span><span class="t">Session du jour</span><span class="s">${todo ? `${esc(best.m.code)} · ${plural(todo, 'carte')} · environ ${Math.max(2, Math.round(todo / 2))} min` : 'Rien à revoir pour l’instant'}</span></span><span class="go">${ic('arrow')}</span></button>` : '') : `<a class="cta" href="#/profil/bibliotheque"><span><span class="t">Importer du contenu</span><span class="s">Ajoute ton premier fichier de révisions</span></span><span class="go">${ic('arrow')}</span></a>`}
+  ${estSoir() && avecContenu.some((x) => x.flashTot) ? `<button class="card nuit-card" id="nuit"><span class="nuit-ic">${ic('moon')}</span><span style="flex:1;text-align:left"><b>Avant de dormir</b><span class="small muted" style="display:block">10 flashcards déjà vues, en douceur : sans chrono ni son.</span></span>${ic('next')}</button>` : ''}
   ${exams.length ? `<div class="row" style="flex-wrap:wrap">${exams.slice(0, 3).map((o) => `<span class="chip m c-${o.x.m.couleur}">${esc(o.x.m.code)} · ${daysUntil(o.e.t) === 0 ? 'aujourd’hui' : 'J-' + daysUntil(o.e.t)}</span>`).join('')}</div>` : ''}
   <div class="between"><h2 class="section-title">Mes matières</h2><span class="small muted">${esc(semestreLabel(u.semestre))}</span></div>
   <div class="subjects">
@@ -398,6 +403,7 @@ async function viewHome() {
     go('#/session');
   });
   document.getElementById('daily')?.addEventListener('click', () => startSession({ code: best.m.code, kind: 'jour' }));
+  document.getElementById('nuit')?.addEventListener('click', () => nuitSheet(avecContenu.filter((x) => x.flashTot)));
   bindInstallBanner();
   if (N.proposer(u)) setTimeout(() => { if (location.hash === '' || location.hash === '#/') inviteNotif(); }, 900);
 }
@@ -409,7 +415,8 @@ async function viewMatieres() {
   const u = S.getUser();
   const all = await Promise.all(S.matieres().map(matiereStats));
   const sems = [...new Set(all.map((x) => x.m.semestre || u.semestre))];
-  $app.innerHTML = `<h1>Matières</h1>` + sems.map((sem) => `
+  $app.innerHTML = `<div class="between"><h1>Matières</h1><a class="icon-btn" href="#/recherche" aria-label="Rechercher une notion">${ic('search')}</a></div>
+  ${S.tousContenus().some((c) => c.glossaire?.length) ? `<a class="card cfg-card" href="#/recherche" style="text-decoration:none"><span><b>Glossaire et auteur·rices</b><span class="small muted" style="display:block">Toutes les notions de toutes tes matières, de A à Z</span></span>${ic('next')}</a>` : ''}` + sems.map((sem) => `
     <div class="between"><h2 class="section-title">${esc(semestreLabel(sem))}</h2>${sem === u.semestre ? '<span class="chip">en cours</span>' : ''}</div>
     <div class="list">${all.filter((x) => (x.m.semestre || u.semestre) === sem).map((x) => `
       <a class="card c-${x.m.couleur}" href="#/matiere/${encodeURIComponent(x.m.code)}" style="display:flex;gap:14px;align-items:center;padding:14px;text-decoration:none">
@@ -434,7 +441,8 @@ function getCfg(code) {
     types: Array.isArray(c.types) ? c.types.filter((t) => TYPE_KEYS.includes(t) && (c.v >= 3 || t !== 'flashcard')) : TYPE_KEYS.filter((t) => t !== 'flashcard'),
     n: c.n ?? 20,
     niveau: c.niveau ?? 'tous',
-    chrono: c.v >= 2 ? !!c.chrono : true
+    chrono: c.v >= 2 ? !!c.chrono : true,
+    reflechir: !!c.reflechir
   };
 }
 const saveCfg = (code, cfg) => localStorage.setItem(CFG_KEY(code), JSON.stringify({ ...cfg, v: 3 }));
@@ -443,7 +451,7 @@ function cfgSummary(cfg) {
   const t = cfg.types.length === TYPE_KEYS.length ? 'tous les types' : plural(cfg.types.length, 'type');
   const n = cfg.n === 'tout' ? 'toutes les questions' : `${cfg.n} questions`;
   const niv = cfg.niveau === 'tous' ? 'tous niveaux' : NIVEAUX[cfg.niveau].toLowerCase();
-  return `${t} · ${n} · ${niv} · chrono ${cfg.chrono ? 'activé' : 'désactivé'}`;
+  return `${t} · ${n} · ${niv} · chrono ${cfg.chrono ? 'activé' : 'désactivé'}${cfg.reflechir ? ' · réfléchir d’abord' : ''}`;
 }
 
 const PARTIES = { CM: 'Cours magistraux', TD: 'Travaux dirigés', METHODE: 'Méthode' };
@@ -473,7 +481,7 @@ async function viewMatiere(code) {
     const ex = nextExam(m);
     const nb = cfg.n === 'tout' ? selItems.length : Math.min(cfg.n, selItems.length);
     $app.innerHTML = `
-    <div class="between">${backBtn()}<button class="icon-btn" id="gear" aria-label="Réglages de la matière">${ic('gear')}</button></div>
+    <div class="between">${backBtn()}<span class="row" style="gap:8px">${x.contenu.glossaire?.length ? `<a class="icon-btn" href="#/recherche/${encodeURIComponent(code)}" aria-label="Glossaire de ${esc(code)}">${ic('search')}</a>` : ''}<button class="icon-btn" id="gear" aria-label="Réglages de la matière">${ic('gear')}</button></span></div>
     <div class="c-${m.couleur}" style="display:flex;flex-direction:column;gap:16px">
       <div class="mat-head">
         <div style="min-width:0"><div class="code">${esc(m.code)}</div><b>${esc(m.nom)}</b>
@@ -617,6 +625,7 @@ function cfgSheet(m, x, st, onDone) {
         <div class="seg">${[['tous', 'Tous'], ['1', 'Facile'], ['2', 'Moyen'], ['3', 'Difficile']].map(([k, l]) => `<button data-niv="${k}" aria-pressed="${String(cfg.niveau) === k}">${l}</button>`).join('')}</div>
       </div>
       <label class="switch"><input type="checkbox" id="chrono" ${cfg.chrono ? 'checked' : ''}><span><b>Chrono</b><span class="small muted" style="display:block">Temps adapté à la difficulté et à la longueur de chaque question (de 20 s à 3 min). Hors flashcards.</span></span></label>
+      <label class="switch"><input type="checkbox" id="refl" ${cfg.reflechir ? 'checked' : ''}><span><b>Réfléchir avant de voir les propositions</b><span class="small muted" style="display:block">La question s’affiche seule : tu formules ta réponse, puis tu découvres les choix (QCU, QCM).</span></span></label>
       <p class="small muted" style="margin:0">${st.sel.size ? `Dans les chapitres cochés : ${plural(total, 'question disponible', 'questions disponibles')}.` : `Dans toute la matière : ${plural(total, 'question disponible', 'questions disponibles')}. Coche des chapitres pour affiner.`}</p>
       <button class="btn primary block" data-close>Enregistrer</button>`;
     const q = (s) => sh.back.querySelectorAll(s);
@@ -630,6 +639,7 @@ function cfgSheet(m, x, st, onDone) {
     q('[data-n]').forEach((b) => b.onclick = () => { cfg.n = b.dataset.n === 'tout' ? 'tout' : Number(b.dataset.n); saveCfg(m.code, cfg); draw(); });
     q('[data-niv]').forEach((b) => b.onclick = () => { cfg.niveau = b.dataset.niv === 'tous' ? 'tous' : Number(b.dataset.niv); saveCfg(m.code, cfg); draw(); });
     sh.back.querySelector('#chrono').onchange = (e) => { cfg.chrono = e.target.checked; saveCfg(m.code, cfg); };
+    sh.back.querySelector('#refl').onchange = (e) => { cfg.reflechir = e.target.checked; saveCfg(m.code, cfg); };
     q('[data-close]').forEach((b) => b.onclick = () => { sh.close(); onDone(); });
   };
   const sh = openSheet('', `c-${m.couleur}`);
@@ -716,6 +726,158 @@ function matiereSheet(m, onClose) {
   lockScroll(); document.body.appendChild(back); draw();
 }
 
+/* ================= Réviser une notion ================= */
+// Rappel (flashcards) → compréhension (vrai/faux, QCU, associations…) → application (cas pratiques),
+// puis les mêmes idées dans d'autres situations, pour manipuler la notion plutôt que l'apprendre par cœur.
+const ETAPE = (it) => (it.type === 'flashcard' ? 0 : it.type === 'cas' ? 2 : 1);
+function planNotion(items) {
+  const base = shuffle(items).sort((a, b) => ETAPE(a) - ETAPE(b)).slice(0, 14);
+  const out = base.map((it) => ({ it, v: 0 }));
+  const autres = base.filter((it) => it.type !== 'flashcard' && nbVariantes(it) > 1);
+  for (let k = 1; k <= 2; k++) for (const it of shuffle(autres)) if (k < nbVariantes(it) && out.length < 20) out.push({ it, v: k });
+  // une variante ne suit jamais immédiatement la même question
+  for (let i = 1; i < out.length; i++) if (out[i].it.id === out[i - 1].it.id) { const j = out.findIndex((o, n) => n > i && o.it.id !== out[i].it.id); if (j > 0) [out[i], out[j]] = [out[j], out[i]]; }
+  return { items: out.map((o) => o.it), vix: out.map((o) => (nbVariantes(o.it) > 1 ? o.v : null)) };
+}
+
+/* ================= Avant de dormir ================= */
+// Flashcards déjà rencontrées (on consolide, on n'apprend pas du neuf), sans chrono ni son, couleurs chaudes.
+const estSoir = () => { const h = new Date().getHours(); return h >= 20 || h < 4; };
+function planNuit(items, prog) {
+  const fc = items.filter((it) => it.type === 'flashcard');
+  const vues = fc.filter((it) => prog[it.id]?.box);
+  const pool = vues.length >= 6 ? vues : fc;
+  return prioritize(pool, prog).slice(0, 10);
+}
+function modeNuit(on) {
+  setSilence(on);
+  document.body.classList.toggle('nuit', on);
+  if (on) document.documentElement.dataset.theme = 'sombre'; else applyTheme();
+}
+function nuitSheet(liste) {
+  if (liste.length === 1) return startSession({ code: liste[0].m.code, kind: 'nuit' });
+  const sh = openSheet(`
+    <div class="between"><h2>Avant de dormir</h2><button class="icon-btn" data-close aria-label="Fermer">${ic('close')}</button></div>
+    <p class="muted" style="margin:0">10 flashcards que tu as déjà vues, sans chrono ni son. Ce que tu revois juste avant de dormir se consolide pendant la nuit.</p>
+    <div class="list">${liste.map((x) => `<button class="card cfg-card c-${x.m.couleur}" data-nuit="${esc(x.m.code)}"><span><b>${esc(x.m.code)}</b><span class="small muted" style="display:block">${esc(x.m.nom)}</span></span>${ic('moon')}</button>`).join('')}</div>`);
+  sh.back.querySelectorAll('[data-nuit]').forEach((b) => b.onclick = () => { sh.close(); startSession({ code: b.dataset.nuit, kind: 'nuit' }); });
+}
+
+/* ================= Recherche, glossaire, auteur·rices ================= */
+const RQ = { q: '', onglet: 'glossaire', code: null };
+let INDEX = null, INDEX_KEY = '';
+function getIndex() {
+  const cs = S.tousContenus();
+  const key = cs.map((c) => c.code + (c.importeLe || '')).join('|');
+  if (key !== INDEX_KEY) { INDEX = R.construireIndex(cs); INDEX_KEY = key; }
+  return INDEX;
+}
+const lettre = (t) => { const l = normalize(t).charAt(0).toUpperCase(); return /[A-Z]/.test(l) ? l : '#'; };
+/** Clé de tri d'un·e auteur·rice : le nom de famille de la première personne citée. */
+const cleAuteur = (n) => { const p = n.split(/ et |\s*\(|,/)[0].trim().split(' ').filter((w) => !/^(al\.|von|de|van|der)$/i.test(w)); return p[p.length - 1] || n; };
+const trie = (a, b) => normalize(a).localeCompare(normalize(b));
+const coul = (code) => S.getMatiere(code)?.couleur || 'orange';
+const puce = (code) => `<span class="chip m c-${coul(code)} sm">${esc(code)}</span>`;
+
+function viewRecherche(code) {
+  tabbar(null); setHalo(code ? coul(code) : null);
+  if (code !== null) RQ.code = code;
+  const cs = S.tousContenus();
+  const avecGloss = cs.filter((c) => c.glossaire?.length || c.auteurs?.length);
+  $app.innerHTML = `
+    <div class="row" style="gap:10px"><button class="icon-btn" id="rback" aria-label="Retour">${ic('back')}</button><label class="field search-field" style="flex:1"><span class="sr">Rechercher</span>${ic('search')}<input id="rq" type="search" placeholder="Une notion, un·e auteur·rice, une date…" autocomplete="off" autocapitalize="off" spellcheck="false" enterkeyhint="search" value="${esc(RQ.q)}"></label></div>
+    <div class="pills" id="rcodes">${[null, ...cs.map((c) => c.code)].map((c) => `<button class="pill ${c ? 'c-' + coul(c) : ''}" data-rcode="${c || ''}" aria-pressed="${RQ.code === c}">${c ? esc(c) : 'Toutes'}</button>`).join('')}</div>
+    <div id="res" style="display:flex;flex-direction:column;gap:14px"></div>`;
+  const draw = () => {
+    const box = document.getElementById('res');
+    const q = RQ.q.trim();
+    if (!q) {
+      if (!avecGloss.length) { box.innerHTML = `<div class="card empty">${stroopImg('etude', 'small')}<p><b>Tape un mot pour chercher dans tes fiches et tes questions.</b></p><p class="small muted">Le glossaire et les auteur·rices arrivent avec les nouvelles versions des fichiers de contenu.</p></div>`; return; }
+      const sel = cs.filter((c) => !RQ.code || c.code === RQ.code);
+      const liste = RQ.onglet === 'glossaire'
+        ? sel.flatMap((c) => (c.glossaire || []).map((g) => ({ code: c.code, nom: g.terme, sous: g.def, g })))
+        : sel.flatMap((c) => (c.auteurs || []).map((a) => ({ code: c.code, nom: a.nom, cle: cleAuteur(a.nom), sous: [a.reperes, a.apport].filter(Boolean).join(' · '), a })));
+      liste.sort((a, b) => trie(a.cle || a.nom, b.cle || b.nom));
+      const groupes = []; for (const e of liste) { const l = lettre(e.cle || e.nom); if (!groupes.length || groupes[groupes.length - 1].l !== l) groupes.push({ l, e: [] }); groupes[groupes.length - 1].e.push(e); }
+      box.innerHTML = `<div class="seg rseg"><button data-onglet="glossaire" aria-pressed="${RQ.onglet === 'glossaire'}">Glossaire</button><button data-onglet="auteurs" aria-pressed="${RQ.onglet === 'auteurs'}">Auteur·rices</button></div>
+        ${groupes.length ? `<div class="az">${groupes.map((g) => `<a href="#" data-az="${g.l}">${g.l}</a>`).join('')}</div>` : ''}
+        ${groupes.map((g) => `<div class="glo-l" id="az-${g.l}">${g.l}</div><div class="list">${g.e.map((e, i) => `<button class="card glo" data-ent="${esc(e.code)}|${RQ.onglet}|${esc(e.nom)}"><span class="between" style="gap:8px"><b>${esc(e.nom)}</b>${RQ.code ? '' : puce(e.code)}</span><span class="small muted clamp2">${esc(e.sous)}</span></button>`).join('')}</div>`).join('') || '<p class="muted">Rien pour cette matière pour l’instant.</p>'}`;
+      box.querySelectorAll('[data-onglet]').forEach((b) => b.onclick = () => { RQ.onglet = b.dataset.onglet; draw(); });
+      box.querySelectorAll('[data-az]').forEach((a) => a.onclick = (ev) => { ev.preventDefault(); document.getElementById('az-' + a.dataset.az)?.scrollIntoView({ block: 'start', behavior: 'smooth' }); });
+      box.querySelectorAll('[data-ent]').forEach((b) => b.onclick = () => ouvrirEntree(...b.dataset.ent.split('|')));
+      return;
+    }
+    const res = R.chercher(getIndex(), q).filter((d) => !RQ.code || d.code === RQ.code);
+    const termes = res.filter((d) => d.k === 'terme').slice(0, 6), auteurs = res.filter((d) => d.k === 'auteur').slice(0, 4);
+    const fiches = res.filter((d) => d.k === 'fiche').slice(0, 8);
+    const qs = res.filter((d) => d.k === 'question');
+    const parNotion = new Map(); for (const d of qs) { const k = d.code + '|' + (d.e.notion || d.ch.titre); if (!parNotion.has(k)) parNotion.set(k, { code: d.code, notion: d.e.notion || d.ch.titre, ids: [] }); parNotion.get(k).ids.push(d.id); }
+    const notions = [...parNotion.values()].slice(0, 8);
+    const hl = (t) => R.surligner(esc(t), q);
+    box.innerHTML = !res.length ? `<div class="card empty">${stroopImg('etude', 'small')}<p><b>Rien trouvé pour « ${esc(q)} ».</b></p><p class="small muted">Essaie un autre mot, ou le nom d’un·e auteur·rice.</p></div>` : `
+      ${termes.length ? `<h2 class="section-title">Glossaire</h2><div class="list">${termes.map((d) => `<button class="card glo" data-ent="${esc(d.code)}|glossaire|${esc(d.g.terme)}"><span class="between" style="gap:8px"><b>${hl(d.g.terme)}</b>${puce(d.code)}</span><span class="small muted clamp2">${hl(d.g.def)}</span></button>`).join('')}</div>` : ''}
+      ${auteurs.length ? `<h2 class="section-title">Auteur·rices</h2><div class="list">${auteurs.map((d) => `<button class="card glo" data-ent="${esc(d.code)}|auteurs|${esc(d.a.nom)}"><span class="between" style="gap:8px"><b>${hl(d.a.nom)}</b>${puce(d.code)}</span><span class="small muted clamp2">${hl([d.a.reperes, d.a.apport].filter(Boolean).join(' · '))}</span></button>`).join('')}</div>` : ''}
+      ${notions.length ? `<h2 class="section-title">À réviser</h2><div class="list">${notions.map((n, i) => `<div class="card glo row" style="gap:10px"><span style="flex:1;min-width:0"><span class="between" style="gap:8px"><b>${hl(n.notion)}</b>${puce(n.code)}</span><span class="small muted">${plural(n.ids.length, 'question')}</span></span><button class="btn soft sm" data-rev="${i}">Réviser</button></div>`).join('')}</div>` : ''}
+      ${fiches.length ? `<h2 class="section-title">Dans les fiches</h2><div class="list">${fiches.map((d, i) => `<button class="card glo" data-fi="${i}"><span class="between" style="gap:8px"><span class="small muted">${esc(shortChap(d.ch.titre))} · ${esc(d.sec.titre)}</span>${puce(d.code)}</span><span class="small">${hl(d.texte)}</span></button>`).join('')}</div>` : ''}`;
+    box.querySelectorAll('[data-ent]').forEach((b) => b.onclick = () => ouvrirEntree(...b.dataset.ent.split('|')));
+    box.querySelectorAll('[data-rev]').forEach((b) => b.onclick = () => { const n = notions[Number(b.dataset.rev)]; startSession({ code: n.code, kind: 'notion', ids: n.ids, titre: n.notion }); });
+    box.querySelectorAll('[data-fi]').forEach((b) => b.onclick = () => { const d = fiches[Number(b.dataset.fi)]; ficheSheet(S.getMatiere(d.code), d.ch, d.sec.id); });
+  };
+  document.getElementById('rback').onclick = () => (history.length > 1 ? history.back() : go('#/'));
+  const inp = document.getElementById('rq');
+  let t = null;
+  inp.oninput = () => { clearTimeout(t); t = setTimeout(() => { RQ.q = inp.value; draw(); }, 140); };
+  inp.onkeydown = (e) => { if (e.key === 'Enter') inp.blur(); };
+  document.querySelectorAll('[data-rcode]').forEach((b) => b.onclick = () => { RQ.code = b.dataset.rcode || null; setHalo(RQ.code ? coul(RQ.code) : null); document.querySelectorAll('[data-rcode]').forEach((x) => x.setAttribute('aria-pressed', String((x.dataset.rcode || null) === RQ.code))); draw(); });
+  draw();
+  if (!RQ.q && !code) setTimeout(() => inp.focus(), 50);
+}
+
+function ouvrirEntree(code, onglet, nom) {
+  const c = S.tousContenus().find((x) => x.code === code); if (!c) return;
+  if (onglet === 'glossaire') { const g = c.glossaire.find((x) => x.terme === nom); if (g) termeSheet(c, g); }
+  else { const a = c.auteurs.find((x) => x.nom === nom); if (a) auteurSheet(c, a); }
+}
+/** Passages des fiches qui citent un mot (pour « Dans le cours »). */
+function passages(c, mots) {
+  const cibles = mots.map(normalize).filter((x) => x.length >= 3);
+  const out = [];
+  for (const ch of c.chapitres) for (const sec of ch.fiche || []) {
+    const t = ' ' + normalize([sec.titre, ...sec.points].join(' ')) + ' ';
+    if (cibles.some((x) => t.includes(' ' + x))) out.push({ ch, sec });
+  }
+  return out;
+}
+async function entreeSheet(c, { titre, sousTitre, corps, extra = '', ids, mots, notion }) {
+  const m = S.getMatiere(c.code); const prog = await S.getProgres(c.code);
+  const items = S.flatItems(c).filter((it) => ids.includes(it.id));
+  const vus = items.filter((it) => prog[it.id]?.box).length, maitr = items.length ? mastery(items, prog) : 0;
+  const ps = passages(c, mots).slice(0, 6);
+  const sh = openSheet(`
+    <div class="between" style="align-items:flex-start"><div>${puce(c.code)}<h2 style="font-size:22px;margin:8px 0 0">${esc(titre)}</h2>${sousTitre ? `<div class="small muted">${esc(sousTitre)}</div>` : ''}</div><button class="icon-btn" data-close aria-label="Fermer">${ic('close')}</button></div>
+    <p style="margin:0;font-size:16px;line-height:1.5">${esc(corps)}</p>
+    ${extra}
+    ${ps.length ? `<div class="field">Dans le cours<div class="list">${ps.map((p, i) => `<button class="card cfg-card" data-ps="${i}"><span><b class="small">${esc(shortChap(p.ch.titre))}</b><span class="small muted" style="display:block">${esc(p.sec.titre)}</span></span>${ic('book')}</button>`).join('')}</div></div>` : ''}
+    ${items.length ? `<div class="small muted">${plural(items.length, 'question liée', 'questions liées')} · ${vus} déjà vue${vus > 1 ? 's' : ''} · maîtrise ${pct(maitr)}</div>` : ''}
+    <button class="cta cta-m" id="revn" ${items.length ? '' : 'disabled'}><span><span class="t">Réviser cette notion</span><span class="s">${items.length ? 'Rappel, compréhension, puis mise en situation' : 'Pas encore de question liée'}</span></span><span class="go">${ic('arrow')}</span></button>`, `c-${m?.couleur || 'orange'}`);
+  sh.back.querySelectorAll('[data-ps]').forEach((b) => b.onclick = () => { const p = ps[Number(b.dataset.ps)]; sh.close(); ficheSheet(m, p.ch, p.sec.id); });
+  sh.back.querySelectorAll('[data-voir]').forEach((b) => b.onclick = () => { const g = (c.glossaire || []).find((x) => normalize(x.terme) === normalize(b.dataset.voir)); sh.close(); if (g) termeSheet(c, g); else { RQ.q = b.dataset.voir; go('#/recherche'); } });
+  sh.back.querySelector('#revn').onclick = () => { sh.close(); startSession({ code: c.code, kind: 'notion', ids, titre: notion }); };
+}
+function termeSheet(c, g) {
+  const ids = R.questionsDuTerme(c, g);
+  const extra = `${g.aussi?.length ? `<div class="small muted">Aussi : ${esc(g.aussi.join(', '))}</div>` : ''}
+    ${g.exemple ? `<div class="reflechir" style="gap:4px"><b class="small">Exemple</b><span class="small">${esc(g.exemple)}</span></div>` : ''}
+    ${g.voir?.length ? `<div class="field">Voir aussi<div class="pills">${g.voir.map((v) => `<button class="pill" data-voir="${esc(v)}">${esc(v)}</button>`).join('')}</div></div>` : ''}`;
+  entreeSheet(c, { titre: g.terme, sousTitre: g.auteur || '', corps: g.def, extra, ids, mots: [g.terme, ...(g.aussi || [])], notion: g.terme });
+}
+function auteurSheet(c, a) {
+  const nom = a.nom.split(/[ ,(]/)[0].length > 2 ? a.nom.replace(/\s*\(.*/, '') : a.nom;
+  const cle = nom.split(' ').pop();
+  const ids = R.questionsDuTerme(c, { terme: cle, aussi: a.aussi || [] });
+  entreeSheet(c, { titre: a.nom, sousTitre: a.reperes || '', corps: a.apport, ids, mots: [cle, ...(a.aussi || [])], notion: a.nom });
+}
+
 /* ================= Sessions ================= */
 const SAVE_KEY = 'stroop-session';
 function saveSession() { if (session && session.kind !== 'rafale') localStorage.setItem(SAVE_KEY, JSON.stringify(session)); }
@@ -728,13 +890,16 @@ function loadSaved() {
   } catch { return null; }
 }
 
-async function startSession({ code, chapitres = null, kind = 'normal', ids = null }) {
+async function startSession({ code, chapitres = null, kind = 'normal', ids = null, titre = null }) {
   const contenu = await S.getContenu(code);
   const prog = await S.getProgres(code);
   const cfg = kind === 'jour' ? { types: TYPE_KEYS, n: 12, niveau: 'tous', chrono: getCfg(code).chrono } : getCfg(code);
   let items = S.flatItems(contenu);
   if (chapitres && chapitres.length) items = items.filter((it) => chapitres.includes(it.chapitre));
-  if (ids) items = shuffle(items.filter((it) => ids.includes(it.id)));
+  let vix = null;
+  if (kind === 'notion') ({ items, vix } = planNotion(items.filter((it) => ids.includes(it.id))));
+  else if (kind === 'nuit') items = planNuit(items, prog);
+  else if (ids) items = shuffle(items.filter((it) => ids.includes(it.id)));
   else if (kind === 'jour') items = prioritize(items.filter((it) => it.type !== 'flashcard' && isDue(prog[it.id])), prog).slice(0, 12);
   else if (kind === 'flash') items = prioritize(items.filter((it) => it.type === 'flashcard'), prog).slice(0, 20);
   else if (kind === 'erreurs') items = shuffle(items.filter((it) => prog[it.id]?.err && it.type !== 'flashcard'));
@@ -749,7 +914,8 @@ async function startSession({ code, chapitres = null, kind = 'normal', ids = nul
   session = {
     code, kind, ids: items.map((i) => i.id), base: items.map((i) => i.id), i: 0, started: Date.now(),
     endsAt: kind === 'rafale' ? Date.now() + 120000 : null,
-    chrono: !!cfg.chrono && kind !== 'rafale' && kind !== 'flash',
+    chrono: !!cfg.chrono && !['rafale', 'flash', 'notion', 'nuit'].includes(kind),
+    reflechir: kind === 'notion' || (!!cfg.reflechir && kind !== 'rafale'), vix, titre,
     results: [], score: 0, m0: mastery(all, prog)
   };
   saveSession();
@@ -761,6 +927,7 @@ async function viewSession() {
   noTab();
   if (!session) { const s = loadSaved(); if (s) session = s; else return go('#/'); }
   if (session.pausedAt) session.pausedAt = null;
+  modeNuit(session.kind === 'nuit');
   document.querySelector('.pause-ov')?.remove();
   const m = S.getMatiere(session.code); setHalo(m.couleur);
   const contenu = await S.getContenu(session.code);
@@ -770,7 +937,7 @@ async function viewSession() {
   clearInterval(timerId); clearInterval(qTimerId);
 
   const finish = () => {
-    clearInterval(timerId); clearInterval(qTimerId); clearSaved(); son('end');
+    clearInterval(timerId); clearInterval(qTimerId); clearSaved(); son('end'); modeNuit(false);
     lastRecap = { ...session, matiere: m, m1: mastery(Object.values(byId), prog) };
     session = null; go('#/recap');
   };
@@ -780,7 +947,8 @@ async function viewSession() {
     else return finish();
   }
   if (!byId[session.ids[session.i]]) { session.i++; return viewSession(); }
-  const it = resolveVariants(byId[session.ids[session.i]]);
+  const it = resolveVariants(byId[session.ids[session.i]], session.vix?.[session.i] ?? null);
+  const autreSituation = session.vix?.[session.i] > 0;
   const pBefore = { ...(prog[it.id] || {}) };
   const fmt = formatOf(it);
   const total = session.kind === 'rafale' ? null : session.ids.length;
@@ -849,7 +1017,7 @@ async function viewSession() {
       <button class="icon-btn" id="pause" aria-label="Pause">${ic('pause')}</button>
       <span class="timer" id="tim">${total ? `${session.i + 1} / ${total}` : session.endsAt <= Date.now() ? 'Dernière !' : fmtTime(session.endsAt - Date.now())}</span>
     </div>
-    <div class="row" style="flex-wrap:wrap"><span class="chip m">${esc(m.code)} · ${esc(shortChap(it.chapitreTitre))}</span><span class="chip">${esc(typeLabel(it.type))}</span><span class="chip">${pBefore.box ? 'Boîte ' + pBefore.box : 'Nouveau'}</span>${session.kind === 'rafale' ? `<span class="chip">${ic('bolt')} ${session.results.length}</span>` : ''}</div>
+    <div class="row" style="flex-wrap:wrap"><span class="chip m">${esc(m.code)} · ${esc(shortChap(it.chapitreTitre))}</span><span class="chip">${esc(typeLabel(it.type))}</span><span class="chip">${pBefore.box ? 'Boîte ' + pBefore.box : 'Nouveau'}</span>${autreSituation ? '<span class="chip">Autre situation</span>' : ''}${session.kind === 'rafale' ? `<span class="chip">${ic('bolt')} ${session.results.length}</span>` : ''}</div>
     ${timed && !st.answered ? (() => { const left = st.deadline - Date.now(); return `<div class="qtimer" aria-hidden="true"><span id="qbar" class="${left < 5000 ? 'late' : ''}" style="width:${Math.max(0, (left / (timeFor(it) * 1000)) * 100)}%"></span></div>`; })() : ''}`;
 
   const ficheLink = () => {
@@ -919,11 +1087,11 @@ async function viewSession() {
       const good = new Set(it.bonnes);
       body = `<div class="qkind ${multi ? 'multi' : 'single'}">${multi ? '<span class="qk-ic">☑︎</span><span><b>QCM</b> · plusieurs réponses possibles, coche toutes les bonnes</span>' : `<span class="qk-ic">◉</span><span><b>QCU</b> · ${it.lettres ? 'format partiel, une seule bonne réponse sur 5' : 'une seule bonne réponse'}</span>`}${m.negatif ? '<span class="neg">points négatifs</span>' : ''}</div>
         <h2 class="qt">${qText}</h2>
-        <div class="list">${st.perm.map((i) => {
+        ${session.reflechir && !st.answered && !st.vu ? `<div class="reflechir"><b>Prends le temps de formuler ta réponse</b><span class="small">Dans ta tête ou à voix haute : la définition, le mécanisme, l’auteur·rice, un exemple… Puis compare avec les propositions.</span><button class="btn soft" id="voir">Voir les propositions</button></div>` : `<div class="list">${st.perm.map((i) => {
           const on = st.picked.has(i); let cls = '';
           if (st.answered) { if (good.has(i)) cls = 'ok'; else if (on) cls = 'ko'; }
           return `<button class="choice ${cls}" data-i="${i}" aria-pressed="${on}" ${st.answered ? 'disabled' : ''}><span class="mk ${multi ? 's' : 'r'}">${on || (st.answered && good.has(i)) ? `<svg class="ic" viewBox="0 0 24 24">${IC.check}</svg>` : ''}</span><span>${it.lettres ? `<b>${'abcdefgh'[i]})</b> ` : ''}${esc(it.choix[i])}</span></button>`;
-        }).join('')}</div>`;
+        }).join('')}</div>`}`;
       foot = footer(st.picked.size > 0);
     } else if (fmt === 'vf') {
       body = `<h2 class="qt">${qText}</h2>
@@ -982,6 +1150,7 @@ async function viewSession() {
       ${head()}${scenario()}<div class="q">${body}${feedback()}</div><div style="flex:1"></div>${foot}${flag()}</div>`;
 
     // Interactions
+    document.getElementById('voir')?.addEventListener('click', () => { st.vu = true; son('flip'); render(); });
     $app.querySelectorAll('[data-i]').forEach((b) => b.onclick = () => {
       const i = Number(b.dataset.i);
       if (fmt === 'qcm') { st.picked.has(i) ? st.picked.delete(i) : st.picked.add(i); } else { st.picked = new Set([i]); }
@@ -1024,7 +1193,7 @@ async function viewSession() {
       if (session.results.length && session.kind !== 'rafale') { saveSession(); toast('Session gardée : tu pourras la reprendre'); }
       else if (!session.results.length) clearSaved();
       if (session.kind === 'rafale' && session.results.length) return finish();
-      session = null; go('#/');
+      modeNuit(false); session = null; go('#/');
     };
     document.getElementById('flag').onclick = () => flagSheet(session.code, it);
     document.getElementById('pause').onclick = () => {
@@ -1137,12 +1306,12 @@ function viewRecap() {
   const up = r.results.filter((x) => x.correct && x.after > x.before).length; const down = r.results.filter((x) => x.after < x.before).length;
   const practice = r.results.filter((x) => x.practice).length;
   const errs = [...new Set(r.results.filter((x) => !x.correct).map((x) => x.id))];
-  const titles = { flash: 'Flashcards terminées !', jour: 'Session du jour terminée !', rafale: 'Fin de la rafale !', erreurs: 'Erreurs revues !', normal: 'Session terminée !' };
+  const titles = { flash: 'Flashcards terminées !', jour: 'Session du jour terminée !', rafale: 'Fin de la rafale !', erreurs: 'Erreurs revues !', normal: 'Session terminée !', notion: r.titre ? `${r.titre} : notion travaillée !` : 'Notion travaillée !', nuit: 'Bonne nuit !' };
   const gain = (r.m1 ?? 0) - (r.m0 ?? 0);
   const arcNouveau = estArcEnCiel(S.getUser()) && localStorage.getItem('stroop-arc-recap') !== today();
   if (arcNouveau) { localStorage.setItem('stroop-arc-recap', today()); setTimeout(() => son('sport'), 300); }
   $app.innerHTML = `<section class="recap c-${r.matiere.couleur}">
-    ${arcNouveau ? `<div class="stroop-zone"><div class="bubble"><span class="who">Stroop</span>Et de ${NB_ARC()} ! Toutes tes matières dans la même journée : journée arc-en-ciel 🌈</div>${stroopImg('arcenciel')}</div>` : `<div class="stroop-zone"><div class="bubble"><span class="who">Stroop</span>${n ? (ok / n >= 0.8 ? 'Wahou, quelle forme ! Je fais la fête.' : ok / n >= 0.5 ? 'Beau travail, ça rentre !' : 'Chaque erreur d’aujourd’hui, c’est une réussite de demain.') : 'On se refait ça bientôt ?'}</div>${stroopImg(n && ok / n < 0.5 ? 'etude' : 'fete')}</div>`}
+    ${r.kind === 'nuit' ? `<div class="stroop-zone"><div class="bubble"><span class="who">Stroop</span>Ton cerveau continue le travail pendant que tu dors. Moi aussi, je vais faire dodo… Zzz</div>${stroopImg('dodo')}</div>` : arcNouveau ? `<div class="stroop-zone"><div class="bubble"><span class="who">Stroop</span>Et de ${NB_ARC()} ! Toutes tes matières dans la même journée : journée arc-en-ciel 🌈</div>${stroopImg('arcenciel')}</div>` : `<div class="stroop-zone"><div class="bubble"><span class="who">Stroop</span>${n ? (ok / n >= 0.8 ? 'Wahou, quelle forme ! Je fais la fête.' : ok / n >= 0.5 ? 'Beau travail, ça rentre !' : 'Chaque erreur d’aujourd’hui, c’est une réussite de demain.') : 'On se refait ça bientôt ?'}</div>${stroopImg(n && ok / n < 0.5 ? 'etude' : 'fete')}</div>`}
     <h1>${titles[r.kind] || titles.normal}</h1>
     <div class="stats">
       <div class="stat"><b>${n}</b><span>réponses</span></div>
@@ -1393,7 +1562,7 @@ async function viewProfil(section) {
         const data = JSON.parse(await file.text());
         const info = await S.importContenu(data, file.name); son('ok');
         const vers = document.getElementById('vers'); if (vers) vers.innerHTML = versionsHtml();
-        out.insertAdjacentHTML('beforeend', `<div class="feedback ok"><b>${esc(info.code)}${info.revision ? ` v${info.revision}` : ''} importé !</b>${plural(info.nbChapitres, 'chapitre')}, ${plural(info.nbElements, 'élément')}. <a href="#/matiere/${encodeURIComponent(info.code)}">Voir ${esc(info.code)}</a></div>`);
+        out.insertAdjacentHTML('beforeend', `<div class="feedback ok"><b>${esc(info.code)}${info.revision ? ` v${info.revision}` : ''} importé !</b>${plural(info.nbChapitres, 'chapitre')}, ${plural(info.nbElements, 'élément')}${info.glossaire ? `, ${plural(info.glossaire, 'terme')} de glossaire, ${plural(info.auteurs, 'auteur·rice', 'auteur·rices')}` : ''}. <a href="#/matiere/${encodeURIComponent(info.code)}">Voir ${esc(info.code)}</a></div>`);
       } catch (er) {
         const msg = er instanceof SyntaxError ? 'Le fichier est abîmé ou incomplet.' : er.message;
         out.insertAdjacentHTML('beforeend', `<div class="feedback ko"><b>${esc(file.name)} : import impossible</b>${esc(msg)}</div>`);

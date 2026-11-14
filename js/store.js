@@ -96,7 +96,10 @@ export async function loadLibrary() {
 function decodeContenu(d) {
   if (!d) return null;
   if (typeof d.chapitresJson === 'string') {
-    try { return { ...d, chapitres: JSON.parse(d.chapitresJson) }; } catch { return null; }
+    try {
+      const lire = (k) => { try { return typeof d[k] === 'string' ? JSON.parse(d[k]) : []; } catch { return []; } };
+      return { ...d, chapitres: JSON.parse(d.chapitresJson), glossaire: lire('glossaireJson'), auteurs: lire('auteursJson') };
+    } catch { return null; }
   }
   return d;
 }
@@ -138,6 +141,9 @@ export function contenusImportes() {
     nbElements: c.chapitres.reduce((a, ch) => a + (ch.elements?.length || 0), 0)
   })).sort((a, b) => a.code.localeCompare(b.code));
 }
+
+/** Contenus complets de toutes les matières importées (pour la recherche et le glossaire). */
+export const tousContenus = () => Object.entries(state.contenu).filter(([, c]) => c && c.chapitres).map(([code, c]) => ({ code, ...c }));
 
 export async function getContenu(code) {
   if (state.contenu[code] !== undefined) return state.contenu[code];
@@ -257,6 +263,8 @@ export function validateContenu(data) {
       checkElement(e);
     }
   }
+  for (const g of data.glossaire || []) if (!g.terme || !g.def) throw new Error(`Entrée de glossaire incomplète : ${g.terme || '?'}`);
+  for (const a of data.auteurs || []) if (!a.nom || !a.apport) throw new Error(`Auteur·rice incomplet : ${a.nom || '?'}`);
   return { code: data.matiere.code, nbChapitres: data.chapitres.length, nbElements: ids.size };
 }
 
@@ -271,8 +279,10 @@ export async function importContenu(data, nomFichier = '') {
   const info = validateContenu(data);
   const code = info.code;
   const importeLe = Date.now(), revision = revisionDe(data, nomFichier), fichier = nomFichier || null;
-  await setDoc(contenuRef(code), { matiere: data.matiere, chapitresJson: JSON.stringify(data.chapitres), version: data.version || 1, importeLe, revision, fichier });
-  state.contenu[code] = { matiere: data.matiere, chapitres: data.chapitres, importeLe, revision, fichier };
+  const glossaire = Array.isArray(data.glossaire) ? data.glossaire : [], auteurs = Array.isArray(data.auteurs) ? data.auteurs : [];
+  await setDoc(contenuRef(code), { matiere: data.matiere, chapitresJson: JSON.stringify(data.chapitres), glossaireJson: JSON.stringify(glossaire), auteursJson: JSON.stringify(auteurs), version: data.version || 1, importeLe, revision, fichier });
+  state.contenu[code] = { matiere: data.matiere, chapitres: data.chapitres, glossaire, auteurs, importeLe, revision, fichier };
+  info.glossaire = glossaire.length; info.auteurs = auteurs.length;
   info.revision = revision;
   // Crée la matière si elle n'existe pas encore (nouveau semestre, nouvelle matière…).
   if (!getMatiere(code)) {

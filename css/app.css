@@ -428,3 +428,26 @@ body::before{content:'';position:fixed;top:0;left:0;right:0;height:env(safe-area
 .btn .nb{font-size:12px;font-weight:800;padding:2px 7px;border-radius:999px;background:rgba(0,0,0,.08);margin-left:2px}
 .day .d.done.arc{background:linear-gradient(135deg,#FFB3C7,#FFE08A 30%,#B5F0C0 55%,#A9D8FF 78%,#D7B8FF);color:#1B1E2E}
 [data-os][aria-pressed="true"]{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+/* Recherche, glossaire, auteur·rices (2.10) */
+.search-field{position:relative;flex-direction:row;align-items:center}
+.search-field>.ic{position:absolute;left:14px;color:var(--muted);pointer-events:none}
+.search-field input{width:100%;padding-left:44px;-webkit-appearance:none;appearance:none}
+.pill[class*="c-"][aria-pressed="true"]{background:var(--m-acc);color:#2A1404;border-color:var(--m-acc)}
+.chip.sm{padding:3px 9px;font-size:12px}
+.card.glo{display:flex;flex-direction:column;gap:4px;padding:12px 14px;border:none;text-align:left;color:var(--ink);width:100%}
+.card.glo.row{flex-direction:row;align-items:center}
+.clamp2{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.glo-l{font-weight:900;font-size:13px;color:var(--muted);letter-spacing:.08em;padding:6px 4px 0;scroll-margin-top:16px}
+.az{display:flex;flex-wrap:wrap;gap:4px}
+.az a{min-width:30px;height:30px;border-radius:9px;display:inline-flex;align-items:center;justify-content:center;background:var(--card);color:var(--ink);font-weight:800;font-size:13px;text-decoration:none}
+mark{background:var(--m-bg,#FFE9A8);color:inherit;border-radius:4px;padding:0 2px}
+.btn.sm{min-height:38px;padding:0 14px;font-size:14px}
+.reflechir{display:flex;flex-direction:column;gap:8px;background:var(--m-bg,var(--card));color:var(--m-ink,var(--ink));border-radius:18px;padding:14px 16px}
+.reflechir .btn{align-self:flex-start}
+/* Avant de dormir */
+.nuit-card{display:flex;align-items:center;gap:12px;padding:14px;border:none;color:var(--ink);width:100%}
+.nuit-ic{width:40px;height:40px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;background:#2B2F5C;color:#FFD9A0}
+body.nuit::after{content:"";position:fixed;inset:0;background:rgba(255,150,40,.10);pointer-events:none;z-index:999}
+body.nuit #halos{opacity:.35}
+.pill:not([class*="c-"])[aria-pressed="true"]{border-color:var(--ink);background:var(--ink);color:var(--bg)}
+.seg.rseg button[aria-pressed="true"]{background:var(--ink);color:var(--bg)}

@@ -70,7 +70,9 @@ const SONS = {
   stroop: () => { tone(420, 0, 0.14, { gain: 0.16, glide: 520, attack: 0.01 }); tone(700, 0.12, 0.16, { gain: 0.12, glide: 400 }); }
 };
 
+let silence = false; // mode « avant de dormir » : aucun son
+export const setSilence = (v) => { silence = !!v; };
 export function son(nom) {
-  if (!getSons().on || !SONS[nom]) return;
+  if (silence || !getSons().on || !SONS[nom]) return;
   try { SONS[nom](); } catch {}
 }
