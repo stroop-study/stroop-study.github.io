@@ -5,14 +5,18 @@ const KEY = 'stroop-sons';
 let ctx = null;
 
 export function getSons() {
-  try { return { on: true, vol: 0.6, ...JSON.parse(localStorage.getItem(KEY) || '{}') }; } catch { return { on: true, vol: 0.6 }; }
+  try { return { on: true, vol: 0.6, silencieux: true, ...JSON.parse(localStorage.getItem(KEY) || '{}') }; } catch { return { on: true, vol: 0.6, silencieux: true }; }
 }
 export function setSons(patch) { localStorage.setItem(KEY, JSON.stringify({ ...getSons(), ...patch })); }
 
+// Session audio iOS (Safari 16.4+) : « transient » = sons courts qui passent même en mode silencieux,
+// en baissant brièvement la musique en cours ; « ambient » = respecte le bouton silencieux.
+export function sessionAudio() {
+  try { if (navigator.audioSession) navigator.audioSession.type = getSons().silencieux ? 'transient' : 'ambient'; } catch {}
+}
 function audio() {
   if (!ctx) {
-    // « ambient » : respecte le bouton silencieux de l'iPhone et ne coupe pas la musique ou un podcast en cours.
-    try { if (navigator.audioSession) navigator.audioSession.type = 'ambient'; } catch {}
+    sessionAudio();
     const AC = window.AudioContext || window.webkitAudioContext;
     if (!AC) return null;
     ctx = new AC();

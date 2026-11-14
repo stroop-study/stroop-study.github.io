@@ -1,6 +1,6 @@
 // Stroop Study — application principale (routeur + écrans).
 import { figureHtml } from './figures.js';
-import { son, getSons, setSons, setSilence } from './sons.js';
+import { son, getSons, setSons, setSilence, sessionAudio } from './sons.js';
 import * as R from './recherche.js';
 import * as N from './notifs.js';
 import {
@@ -11,7 +11,7 @@ import * as S from './store.js';
 import { today, isDue, dueDate, nextState, mastery, notionStats, seenCount, prioritize, shuffle, streak, INTERVALS } from './leitner.js';
 import { TYPES, TYPE_KEYS, NIVEAUX, typeLabel, timeFor, formatOf, checkCourte, sameSet, resolveVariants, nbVariantes, normalize } from './types.js';
 
-const VERSION = '2.10.4';
+const VERSION = '2.10.5';
 const $app = document.getElementById('app');
 const $tab = document.getElementById('tabbar');
 const $halos = document.getElementById('halos');
@@ -1547,6 +1547,7 @@ async function viewProfil(section) {
     affichage: card(`<div class="field">Apparence<div class="seg" role="group">${[['auto', 'Auto'], ['clair', 'Clair'], ['sombre', 'Sombre']].map(([k, l]) => `<button data-th="${k}" aria-pressed="${theme === k}">${l}</button>`).join('')}</div></div>`) + card(`
       <div class="between"><h2 class="section-title">Sons</h2><label class="tgl"><input type="checkbox" id="sonOn" ${getSons().on ? 'checked' : ''}><span></span><b class="sr">Activer les sons</b></label></div>
       <div class="row" style="gap:12px;${getSons().on ? '' : 'opacity:.5'}"><span class="small muted">Volume</span><input type="range" id="sonVol" min="0" max="100" step="5" value="${Math.round(getSons().vol * 100)}" style="flex:1"><button class="flag-btn" id="sonTest">Écouter</button></div>
+      <label class="switch" style="${getSons().on ? '' : 'opacity:.5'}"><input type="checkbox" id="sonSil" ${getSons().silencieux ? 'checked' : ''}><span><b>Même en mode silencieux</b><span class="small muted" style="display:block">Sur iPhone, les sons passent même quand le téléphone est en silencieux (la musique en cours baisse un instant).</span></span></label>
       <p class="muted small" style="margin:0">Sur iPhone, les sons suivent le bouton silencieux.</p>`),
     bibliotheque: S.isAdmin() ? card(`
       <h2 class="section-title">Importer du contenu</h2>
@@ -1591,6 +1592,7 @@ async function viewProfil(section) {
   }
   bindNotifCard();
   const sonOn = document.getElementById('sonOn'); if (sonOn) sonOn.onchange = (e) => { setSons({ on: e.target.checked }); if (e.target.checked) son('ok'); viewProfil(section); };
+  const sonSil = document.getElementById('sonSil'); if (sonSil) sonSil.onchange = (e) => { setSons({ silencieux: e.target.checked }); sessionAudio(); son('ok'); };
   const sonVol = document.getElementById('sonVol'); if (sonVol) sonVol.onchange = (e) => { setSons({ vol: Number(e.target.value) / 100 }); son('ok'); };
   const sonTest = document.getElementById('sonTest'); if (sonTest) sonTest.onclick = () => son('up');
   const prenom = document.getElementById('prenom'); if (prenom) prenom.onchange = (e) => S.saveUser({ prenom: e.target.value.trim() }).then(() => toast('Enregistré'));
