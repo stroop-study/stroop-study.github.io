@@ -11,7 +11,7 @@ import * as S from './store.js';
 import { today, isDue, dueDate, nextState, mastery, notionStats, seenCount, prioritize, shuffle, streak, INTERVALS } from './leitner.js';
 import { TYPES, TYPE_KEYS, NIVEAUX, typeLabel, timeFor, formatOf, checkCourte, sameSet, resolveVariants, nbVariantes, normalize } from './types.js';
 
-const VERSION = '2.10.0';
+const VERSION = '2.10.1';
 const $app = document.getElementById('app');
 const $tab = document.getElementById('tabbar');
 const $halos = document.getElementById('halos');
@@ -878,6 +878,46 @@ function auteurSheet(c, a) {
   entreeSheet(c, { titre: a.nom, sousTitre: a.reperes || '', corps: a.apport, ids, mots: [cle, ...(a.aussi || [])], notion: a.nom });
 }
 
+/* ================= Labo écoute (test du futur mode écoute) ================= */
+// Deux tests à faire sur le téléphone : les voix françaises disponibles, et la lecture audio écran verrouillé.
+function wavBips(sec = 90) {
+  // fichier WAV généré à la volée : un bip doux toutes les 5 secondes, pour vérifier la lecture en arrière-plan
+  const sr = 16000, n = sr * sec, buf = new ArrayBuffer(44 + n * 2), v = new DataView(buf);
+  const w = (o, s) => [...s].forEach((c, i) => v.setUint8(o + i, c.charCodeAt(0)));
+  w(0, 'RIFF'); v.setUint32(4, 36 + n * 2, true); w(8, 'WAVE'); w(12, 'fmt '); v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true);
+  v.setUint32(24, sr, true); v.setUint32(28, sr * 2, true); v.setUint16(32, 2, true); v.setUint16(34, 16, true); w(36, 'data'); v.setUint32(40, n * 2, true);
+  for (let i = 0; i < n; i++) { const t = i / sr, k = t % 5; const a = k < 0.35 ? Math.sin(Math.PI * k / 0.35) * 0.35 : 0; v.setInt16(44 + i * 2, Math.round(a * Math.sin(2 * Math.PI * (k < 0.18 ? 660 : 880) * t) * 32767), true); }
+  return URL.createObjectURL(new Blob([buf], { type: 'audio/wav' }));
+}
+function laboEcoute() {
+  const synth = window.speechSynthesis;
+  const voix = () => (synth ? synth.getVoices().filter((x) => /^fr/i.test(x.lang)) : []);
+  const ua = `${/iPhone|iPad/.test(navigator.userAgent) ? 'iPhone/iPad' : /Android/.test(navigator.userAgent) ? 'Android' : 'Ordinateur'} · ${matchMedia('(display-mode: standalone)').matches || navigator.standalone ? 'appli installée' : 'navigateur'}`;
+  const sh = openSheet(`
+    <div class="between"><h2>Labo écoute</h2><button class="icon-btn" data-close aria-label="Fermer">${ic('close')}</button></div>
+    <p class="muted small" style="margin:0">Deux tests rapides pour préparer le mode écoute. Note ce qui se passe et raconte-le à Claude. (${esc(ua)})</p>
+    <div class="field">1. Les voix du téléphone<div id="lvx" class="list"></div></div>
+    <div class="field">2. Écran verrouillé<span class="small muted" style="font-weight:600">Lance le son (un bip toutes les 5 s pendant 1 min 30), verrouille ton téléphone, puis écoute : les bips continuent-ils ? Les commandes apparaissent-elles sur l’écran verrouillé ?</span>
+      <div class="two"><button class="btn soft" id="lbip">${ic('play')}Lancer les bips</button><button class="btn plain" id="lstop">Arrêter</button></div></div>
+    <div class="field">3. Voix écran verrouillé<span class="small muted" style="font-weight:600">Même test avec la voix du téléphone : lance la lecture, verrouille, écoute si elle continue.</span>
+      <button class="btn soft" id="lvoixlock">${ic('play')}Lire un long passage</button></div>`);
+  const phrase = 'Le transfert : les désirs et sentiments inconscients du patient, liés à des relations passées, se rejouent dans la relation au thérapeute.';
+  const dire = (texte, v) => { if (!synth) return toast('Synthèse vocale indisponible ici'); synth.cancel(); const u = new SpeechSynthesisUtterance(texte); u.lang = 'fr-FR'; if (v) u.voice = v; u.rate = 0.95; synth.speak(u); };
+  const remplir = () => {
+    const vs = voix();
+    sh.back.querySelector('#lvx').innerHTML = vs.length ? vs.map((x, i) => `<button class="card cfg-card" data-lv="${i}"><span><b>${esc(x.name)}</b><span class="small muted" style="display:block">${esc(x.lang)}${x.localService ? ' · sur le téléphone' : ' · en ligne'}</span></span>${ic('play')}</button>`).join('') : '<p class="small muted" style="margin:0">Aucune voix française trouvée (ou pas encore chargée).</p>';
+    sh.back.querySelectorAll('[data-lv]').forEach((b) => b.onclick = () => dire(phrase, vs[Number(b.dataset.lv)]));
+  };
+  remplir(); if (synth) synth.onvoiceschanged = remplir;
+  let audio = null;
+  sh.back.querySelector('#lbip').onclick = () => {
+    audio?.pause(); audio = new Audio(wavBips()); audio.play().catch((e) => toast('Lecture refusée : ' + e.message));
+    if ('mediaSession' in navigator) { navigator.mediaSession.metadata = new MediaMetadata({ title: 'Test du mode écoute', artist: 'Stroop Study', artwork: [{ src: 'assets/icons/icon-512.png', sizes: '512x512', type: 'image/png' }] }); navigator.mediaSession.setActionHandler('pause', () => audio?.pause()); navigator.mediaSession.setActionHandler('play', () => audio?.play()); }
+  };
+  sh.back.querySelector('#lstop').onclick = () => { audio?.pause(); synth?.cancel(); };
+  sh.back.querySelector('#lvoixlock').onclick = () => dire(Array(6).fill(phrase).join(' '), voix()[0]);
+}
+
 /* ================= Sessions ================= */
 const SAVE_KEY = 'stroop-session';
 function saveSession() { if (session && session.kind !== 'rafale') localStorage.setItem(SAVE_KEY, JSON.stringify(session)); }
@@ -1519,7 +1559,8 @@ async function viewProfil(section) {
     signalements: card(`<h2 class="section-title">Mes signalements</h2>${flags.length ? `<div class="list">${flags.map((f) => `<div class="between" style="align-items:flex-start"><div><b class="small">${esc(f.matiere)} · ${esc(f.item.id)}</b><div class="small muted">${esc(itemLabel(f.item))}</div>${f.flag.note ? `<div class="small">« ${esc(f.flag.note)} »</div>` : ''}</div><button class="flag-btn" data-unflag="${esc(f.matiere)}|${esc(f.item.id)}">Retirer</button></div>`).join('')}</div>` : '<p class="muted small" style="margin:0">Aucun signalement. Pendant une session, touche « Signaler » sous une question qui te semble fausse ou mal posée.</p>'}`)
       + (S.isAdmin() ? card(`<h2 class="section-title">Signalements des invité·es</h2>${flagsInv === null ? `<p class="muted small" style="margin:0">Pour les voir, mets à jour les règles Firebase une fois : copie-les, puis colle-les dans Firebase (<b>Firestore → Règles</b>) et clique sur <b>Publier</b>.</p><button class="btn plain block" id="copyrules">${ic('copy')}Copier les règles</button>` : flagsInv.length ? `<div class="list">${flagsInv.map((f) => `<div class="between" style="align-items:flex-start"><div><b class="small">${esc(f.code)} · ${esc(f.item)}</b> <span class="small muted">par ${esc(f.prenom || f.email || 'un·e invité·e')}</span><div class="small muted">${esc(f.it ? itemLabel(f.it) : 'Question introuvable dans le contenu actuel')}</div>${f.note ? `<div class="small">« ${esc(f.note)} »</div>` : ''}</div><button class="flag-btn" data-unflaginv="${esc(f.sid)}">Retirer</button></div>`).join('')}</div>` : '<p class="muted small" style="margin:0">Aucun signalement de tes invité·es pour l’instant.</p>'}`) : '')
       + ((flags.length || flagsInv?.length) ? `<button class="btn plain block" id="copyflags">${ic('copy')}Copier tout pour Claude</button>` : ''),
-    aide: `<button class="card cfg-card" id="instP"><span><b>Installer Stroop sur mon téléphone</b><span class="small muted" style="display:block">Le tuto iPhone et Android, à partager aussi</span></span>${ic('next')}</button>
+    aide: `<button class="card cfg-card" id="laboE"><span><b>Labo écoute</b><span class="small muted" style="display:block">2 minutes de tests pour préparer le futur mode écoute</span></span>${ic('next')}</button>
+    <button class="card cfg-card" id="instP"><span><b>Installer Stroop sur mon téléphone</b><span class="small muted" style="display:block">Le tuto iPhone et Android, à partager aussi</span></span>${ic('next')}</button>
       <button class="card cfg-card" id="tutoP"><span><b>Comment fonctionne la boîte de Leitner ?</b><span class="small muted" style="display:block">Le petit tuto des 5 boîtes</span></span>${ic('next')}</button>
       ${card(`<b>Et la maîtrise ?</b><p class="muted small" style="margin:0">Dans chaque matière, touche le cercle de maîtrise pour voir comment elle se calcule et la liste de tes notions.</p>`)}
       <p class="muted small" style="margin:0;text-align:center">Stroop Study · version ${VERSION}</p>`,
@@ -1588,6 +1629,7 @@ async function viewProfil(section) {
   });
   const tutoP = document.getElementById('tutoP'); if (tutoP) tutoP.onclick = () => leitnerTuto(null);
   const instP = document.getElementById('instP'); if (instP) instP.onclick = () => installSheet();
+  const laboE = document.getElementById('laboE'); if (laboE) laboE.onclick = () => laboEcoute();
   const exp = document.getElementById('export'); if (exp) exp.onclick = async () => {
     const data = await S.exportAll();
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
