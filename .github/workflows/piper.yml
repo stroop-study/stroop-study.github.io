@@ -1,5 +1,6 @@
 # Copie dans l'appli (dossier vendor/) le moteur de voix Piper et ONNX Runtime, pour ne charger
 # aucun code depuis un site tiers pendant l'utilisation. Aucune donnée de l'appli n'est envoyée.
+# v2 : version WebAssembly seule + phonémiseur.
 # Se lance tout seul quand ce fichier change, ou à la main (Actions → Piper → Run workflow).
 name: Piper
 on:
@@ -22,7 +23,7 @@ jobs:
       - name: Télécharger les paquets
         run: |
           mkdir -p /tmp/p && cd /tmp/p && npm init -y >/dev/null
-          npm install --no-audit --no-fund @mintplex-labs/piper-tts-web@1.0.4
+          npm install --no-audit --no-fund @mintplex-labs/piper-tts-web@1.0.4 @diffusionstudio/piper-wasm@1.0.0
       - name: Copier dans vendor/
         run: |
           rm -rf vendor/piper && mkdir -p vendor/piper/ort
@@ -31,9 +32,13 @@ jobs:
           cp $P/package.json vendor/piper/package.json
           O=/tmp/p/node_modules/onnxruntime-web
           cp $O/package.json vendor/piper/ort/package.json
-          cp $O/dist/*.wasm vendor/piper/ort/ 2>/dev/null || true
-          cp $O/dist/*.mjs vendor/piper/ort/ 2>/dev/null || true
-          cp $O/dist/ort.min.js vendor/piper/ort/ 2>/dev/null || true
+          # seulement la version WebAssembly (CPU) d'ONNX Runtime : ce que Piper utilise
+          cp $O/dist/ort.wasm.min.mjs $O/dist/ort-wasm-simd-threaded.mjs $O/dist/ort-wasm-simd-threaded.wasm vendor/piper/ort/
+          W=/tmp/p/node_modules/@diffusionstudio/piper-wasm
+          mkdir -p vendor/piper/phonemize
+          cp $W/package.json vendor/piper/phonemize/package.json
+          cp $W/build/piper_phonemize.* vendor/piper/phonemize/ 2>/dev/null || true
+          ls -la $W $W/build || true
           (cd /tmp/p && npm ls --all > /tmp/arbre.txt || true)
           cp /tmp/arbre.txt vendor/piper/ARBRE.txt
           find vendor/piper -type f -printf '%s\t%p\n' | sort -k2 > vendor/piper/FICHIERS.txt
