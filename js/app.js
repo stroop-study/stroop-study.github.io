@@ -11,7 +11,7 @@ import * as S from './store.js';
 import { today, isDue, dueDate, nextState, mastery, notionStats, seenCount, prioritize, shuffle, streak, INTERVALS } from './leitner.js';
 import { TYPES, TYPE_KEYS, NIVEAUX, typeLabel, timeFor, formatOf, checkCourte, sameSet, resolveVariants, nbVariantes, normalize } from './types.js';
 
-const VERSION = '2.10.3';
+const VERSION = '2.10.4';
 const $app = document.getElementById('app');
 const $tab = document.getElementById('tabbar');
 const $halos = document.getElementById('halos');
@@ -900,10 +900,10 @@ function laboEcoute() {
     <p class="muted small" style="margin:0">Deux tests rapides pour préparer le mode écoute. Note ce qui se passe et raconte-le à Claude. (${esc(ua)})</p>
     <div class="field">1. Les voix du téléphone<div id="lvx" class="list"></div></div>
     <div class="field">2. Écran verrouillé<span class="small muted" style="font-weight:600">Lance le son (un bip toutes les 5 s pendant 1 min 30), verrouille ton téléphone, puis écoute : les bips continuent-ils ? Les commandes apparaissent-elles sur l’écran verrouillé ?</span>
-      <div class="two"><button class="btn soft" id="lbip">${ic('play')}Lancer les bips</button><button class="btn plain" id="lstop">Arrêter</button></div></div>
+      <div class="two"><button class="btn soft" id="lbip">${ic('play')}Lancer les bips</button><button class="btn plain" id="lstop">Arrêter</button></div><span class="small" id="lbipetat" style="font-weight:700"></span></div>
     <div class="field">3. Voix écran verrouillé<span class="small muted" style="font-weight:600">Même test avec la voix du téléphone : lance la lecture, verrouille, écoute si elle continue.</span>
       <button class="btn soft" id="lvoixlock">${ic('play')}Lire un long passage</button></div>`);
-  const phrase = 'Le transfert : les désirs et sentiments inconscients du patient, liés à des relations passées, se rejouent dans la relation au thérapeute.';
+  const phrase = 'Bonjour, je suis la voix du téléphone. Ceci est un simple test de lecture, pour savoir si je continue à parler quand l’écran est verrouillé.';
   const dire = (texte, v) => { if (!synth) return toast('Synthèse vocale indisponible ici'); synth.cancel(); const u = new SpeechSynthesisUtterance(texte); u.lang = 'fr-FR'; if (v) u.voice = v; u.rate = 0.95; synth.speak(u); };
   const remplir = () => {
     const vs = voix();
@@ -913,7 +913,14 @@ function laboEcoute() {
   remplir(); if (synth) synth.onvoiceschanged = remplir;
   let audio = null;
   sh.back.querySelector('#lbip').onclick = () => {
-    audio?.pause(); audio = new Audio(wavBips()); audio.play().catch((e) => toast('Lecture refusée : ' + e.message));
+    // « playback » : joue même en mode silencieux et autorise l'arrière-plan (Safari 16.4+)
+    try { if (navigator.audioSession) navigator.audioSession.type = 'playback'; } catch {}
+    const etat = sh.back.querySelector('#lbipetat');
+    audio?.pause(); audio = new Audio(wavBips()); audio.loop = false;
+    audio.onplaying = () => { etat.textContent = 'Lecture en cours : tu devrais entendre un bip toutes les 5 secondes.'; };
+    audio.onerror = () => { etat.textContent = 'Erreur de lecture du son (code ' + (audio.error?.code ?? '?') + ').'; };
+    etat.textContent = 'Démarrage…';
+    audio.play().catch((e) => { etat.textContent = 'Lecture refusée par le téléphone : ' + e.name + ' (' + e.message + ')'; });
     if ('mediaSession' in navigator) { navigator.mediaSession.metadata = new MediaMetadata({ title: 'Test du mode écoute', artist: 'Stroop Study', artwork: [{ src: 'assets/icons/icon-512.png', sizes: '512x512', type: 'image/png' }] }); navigator.mediaSession.setActionHandler('pause', () => audio?.pause()); navigator.mediaSession.setActionHandler('play', () => audio?.play()); }
   };
   sh.back.querySelector('#lstop').onclick = () => { audio?.pause(); synth?.cancel(); };
