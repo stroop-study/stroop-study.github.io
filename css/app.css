@@ -455,3 +455,16 @@ body.nuit #halos{opacity:.35}
 .criteres ul{margin:0;padding-left:18px;display:flex;flex-direction:column;gap:6px;font-size:14px;line-height:1.45;font-weight:500}
 .criteres b{font-weight:800;color:var(--m-ink,var(--ink))}
 .criteres li.sub{list-style:none;margin-left:-4px;padding-left:10px;border-left:3px solid var(--m-bg,var(--line))}
+/* Progrès (2.12) */
+.cmp{display:grid;grid-template-columns:1fr auto 84px;align-items:center;gap:10px;font-size:15px}
+.cmp>span:first-child{color:var(--muted);font-weight:700}
+.cmp>b{font-family:'Outfit',sans-serif;font-size:18px}
+.evo{font-size:12px;font-weight:800;border-radius:999px;padding:3px 8px;text-align:center}
+.evo.up{background:#DDF3E4;color:#1E7A43}
+.evo.down{background:#FBE3E3;color:#B4232A}
+.records{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+.rec{padding:12px 10px;display:flex;flex-direction:column;gap:2px;text-align:center}
+.rec b{font-family:'Outfit',sans-serif;font-size:16px}
+.pile{display:flex;height:16px;border-radius:999px;overflow:hidden;gap:2px}
+.nrow{display:flex;align-items:center;gap:8px}
+.nrow .chip{flex:none}

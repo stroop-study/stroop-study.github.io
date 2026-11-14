@@ -11,7 +11,7 @@ import * as S from './store.js';
 import { today, isDue, dueDate, nextState, mastery, notionStats, seenCount, prioritize, shuffle, streak, INTERVALS } from './leitner.js';
 import { TYPES, TYPE_KEYS, NIVEAUX, typeLabel, timeFor, formatOf, checkCourte, sameSet, resolveVariants, nbVariantes, normalize } from './types.js';
 
-const VERSION = '2.11.1';
+const VERSION = '2.12.0';
 const $app = document.getElementById('app');
 const $tab = document.getElementById('tabbar');
 const $halos = document.getElementById('halos');
@@ -1450,72 +1450,123 @@ async function viewProgres() {
   const u = S.getUser();
   const s = streak(u.jours);
   const keys = Object.keys(u.jours).sort();
-  let best = 0, cur = 0, prev = null;
-  for (const k of keys) {
-    if (!u.jours[k]) continue;
-    const d = new Date(k); if (prev && (d - prev) / 86400000 === 1) cur++; else cur = 1;
-    best = Math.max(best, cur); prev = d;
-  }
   // séries : actuelle (depuis quand) et meilleure (du… au…)
-  let bestStart = null, bestEnd = null, runStart = null; prev = null; cur = 0;
+  let best = 0, cur = 0, prev = null, bestStart = null, bestEnd = null, runStart = null;
   for (const k of keys) {
     if (!u.jours[k]) continue;
     const dd = new Date(k);
-    if (prev && (dd - prev) / 86400000 === 1) cur++; else { cur = 1; runStart = k; }
-    if (cur >= best && cur) { bestStart = runStart; bestEnd = k; }
+    if (prev && Math.round((dd - prev) / 86400000) === 1) cur++; else { cur = 1; runStart = k; }
+    if (cur >= best) { best = cur; bestStart = runStart; bestEnd = k; }
     prev = dd;
   }
+  const temps = u.temps || {};
   const totalRep = keys.reduce((a, k) => a + (u.jours[k] || 0), 0);
   const joursTravailles = keys.filter((k) => u.jours[k]).length;
   const joursArc = Object.keys(u.joursM || {}).filter((k) => estArcEnCiel(u, k)).length;
-  const totalMin = Math.round(Object.values(u.temps || {}).reduce((a, v) => a + v, 0) / 60);
+  const totalMin = Math.round(Object.values(temps).reduce((a, v) => a + v, 0) / 60);
   const all = await Promise.all(S.matieres().map(matiereStats));
+  const avec = all.filter((x) => x.contenu);
   const couleurOf = Object.fromEntries(S.matieres().map((m) => [m.code, m.couleur]));
-  // 5 dernières semaines : chaque case prend la couleur de la matière la plus travaillée ce jour-là
-  const d = new Date(); const dow = (d.getDay() + 6) % 7; d.setDate(d.getDate() - dow - 28);
-  let cal = '';
-  for (let w = 0; w < 5; w++) {
-    cal += '<div style="display:grid;grid-template-columns:repeat(7,1fr);gap:6px">';
-    for (let i = 0; i < 7; i++) {
-      const k = today(d); const n = u.jours[k] || 0; const fut = k > today();
-      const lvl = n === 0 ? 0 : n < 10 ? 1 : n < 30 ? 2 : 3;
-      const jm = u.joursM?.[k];
-      const top = jm ? Object.entries(jm).sort((a, b) => b[1] - a[1])[0][0] : null;
-      const col = top && couleurOf[top] ? `var(--${couleurOf[top]}-acc)` : 'var(--muted)';
-      const style = fut ? 'background:transparent' : lvl === 0 ? 'background:var(--ghost)' : `background:${col};opacity:${[0, 0.4, 0.7, 1][lvl]}`;
-      const label = `${k} : ${plural(n, 'réponse')}${top ? ', surtout ' + top : ''}`;
-      cal += `<span title="${esc(label)}" aria-label="${esc(label)}" style="aspect-ratio:1;border-radius:10px;${style};${k === today() ? 'outline:2px dashed var(--ink);outline-offset:-2px' : ''}"></span>`;
-      d.setDate(d.getDate() + 1);
-    }
-    cal += '</div>';
-  }
   const fmtD = (k) => new Date(k).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long' });
-  const usedCols = [...new Set(Object.values(u.joursM || {}).flatMap((jm) => Object.keys(jm)))].filter((c) => couleurOf[c]);
-  $app.innerHTML = `<div class="between"><h1>Progrès</h1>${joursArc ? `<img class="stroop small a-arcenciel" src="assets/stroop/stroop-arcenciel.webp" alt="Stroop arc-en-ciel" style="width:88px;height:88px">` : `<img class="stroop small a-etude" src="assets/stroop/stroop-etude.webp" alt="Stroop studieux" style="width:88px;height:88px">`}</div>
+
+  // ----- Mémoire -----
+  let bonnes = 0, fausses = 0; const boites = [0, 0, 0, 0, 0, 0];
+  const notions = [];
+  for (const x of avec) {
+    for (const it of x.items) {
+      const p = x.prog[it.id]; if (!p) continue;
+      bonnes += p.ok ?? (p.box && !p.err ? 1 : 0); fausses += p.ko ?? (p.err ? 1 : 0);
+      if (p.box) boites[p.box]++;
+    }
+    for (const n of notionStats(x.items, x.prog).notions) if (n.vus) notions.push({ ...n, code: x.m.code, couleur: x.m.couleur });
+  }
+  const reussite = bonnes + fausses ? Math.round((bonnes / (bonnes + fausses)) * 100) : null;
+  const gravees = boites[4] + boites[5], consol = boites[3], appr = boites[1] + boites[2], enMemoire = gravees + consol + appr;
+  const forts = notions.filter((n) => n.statut === 'maitrisee').sort((a, b) => b.score - a.score || b.vus - a.vus).slice(0, 5);
+  const faibles = notions.filter((n) => n.statut === 'revoir' || n.score < 0.5).sort((a, b) => (a.statut === 'revoir' ? 0 : 1) - (b.statut === 'revoir' ? 0 : 1) || a.score - b.score || b.vus - a.vus).slice(0, 5);
+
+  // ----- Rythme -----
+  const jour = (dec) => { const d = new Date(); d.setDate(d.getDate() - dec); return today(d); };
+  const j30 = Array.from({ length: 30 }, (_, i) => jour(29 - i));
+  const lundi = (dec) => { const d = new Date(); d.setDate(d.getDate() - ((d.getDay() + 6) % 7) - dec * 7); return d; };
+  const semaine = (dec) => { const d0 = lundi(dec); return Array.from({ length: 7 }, (_, i) => { const d = new Date(d0); d.setDate(d0.getDate() + i); return today(d); }); };
+  const somme = (ks, f) => ks.reduce((a, k) => a + f(k), 0);
+  const cette = semaine(0), derniere = semaine(1);
+  const sem = (ks) => ({ rep: somme(ks, (k) => u.jours[k] || 0), min: Math.round(somme(ks, (k) => temps[k] || 0) / 60), jours: ks.filter((k) => u.jours[k]).length });
+  const S0 = sem(cette), S1 = sem(derniere);
+  const evo = (a, b) => (!b ? (a ? '<span class="evo up">nouveau</span>' : '') : `<span class="evo ${a >= b ? 'up' : 'down'}">${a >= b ? '▲' : '▼'} ${Math.abs(Math.round(((a - b) / b) * 100))} %</span>`);
+  const meilleurJour = keys.reduce((m, k) => ((u.jours[k] || 0) > (u.jours[m] || 0) ? k : m), keys[0]);
+  const plusLong = Object.keys(temps).reduce((m, k) => ((temps[k] || 0) > (temps[m] || 0) ? k : m), Object.keys(temps)[0]);
+  let mode = 'rep';
+  const graphe = () => {
+    const val = (k) => (mode === 'rep' ? u.jours[k] || 0 : Math.round((temps[k] || 0) / 60));
+    const max = Math.max(1, ...j30.map(val));
+    const W = 300, H = 110, bw = W / 30;
+    const barres = j30.map((k, i) => {
+      const v = val(k), h = v ? Math.max(3, (v / max) * (H - 18)) : 0;
+      const jm = u.joursM?.[k]; const top = jm ? Object.entries(jm).sort((a, b) => b[1] - a[1])[0][0] : null;
+      const col = top && couleurOf[top] ? `var(--${couleurOf[top]}-acc)` : 'var(--muted)';
+      return `<rect x="${i * bw + 1.5}" y="${H - h}" width="${bw - 3}" height="${h}" rx="3" fill="${v ? col : 'var(--ghost)'}"><title>${esc(fmtD(k))} : ${mode === 'rep' ? plural(v, 'réponse') : fmtMin(v)}${top ? ', surtout ' + top : ''}</title></rect>${v ? '' : `<rect x="${i * bw + 1.5}" y="${H - 3}" width="${bw - 3}" height="3" rx="1.5" fill="var(--ghost)"/>`}`;
+    }).join('');
+    const etiq = [0, 10, 20, 29].map((i) => `<text x="${i === 29 ? W : i === 0 ? 0 : i * bw + bw / 2}" y="${H + 13}" text-anchor="${i === 29 ? 'end' : i === 0 ? 'start' : 'middle'}" font-size="9" fill="var(--muted)">${new Date(j30[i]).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })}</text>`).join('');
+    return `<svg viewBox="0 0 ${W} ${H + 16}" width="100%" role="img" aria-label="${mode === 'rep' ? 'Réponses' : 'Temps de révision'} des 30 derniers jours"><text x="0" y="9" font-size="9" fill="var(--muted)">max ${mode === 'rep' ? max : fmtMin(max)}</text>${barres}${etiq}</svg>`;
+  };
+
+  $app.innerHTML = `<div class="between"><h1>Progrès</h1>${stroopImg(joursArc ? 'arcenciel' : 'etude', 'small').replace('width="176" height="176"', 'width="88" height="88" style="width:88px;height:88px"')}</div>
     <div class="stats">
+      <button class="stat" data-stat><b>${totalMin ? fmtMin(totalMin) : '0 min'}</b><span>de révision</span></button>
+      <button class="stat" data-stat><b>${bonnes}</b><span>${bonnes > 1 ? 'bonnes réponses' : 'bonne réponse'}</span></button>
       <button class="stat" data-stat><b>${s}</b><span>${s > 1 ? 'jours d’affilée' : 'jour d’affilée'}</span></button>
-      <button class="stat" data-stat><b>${best}</b><span>meilleure série</span></button>
-      <button class="stat" data-stat><b>${totalRep}</b><span>${totalRep > 1 ? 'réponses' : 'réponse'}</span></button>
     </div>
-    <div class="card" style="padding:14px;display:flex;flex-direction:column;gap:6px">
-      <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:6px;text-align:center" class="small muted">${['L', 'M', 'M', 'J', 'V', 'S', 'D'].map((x) => `<span>${x}</span>`).join('')}</div>
-      ${cal}
-      ${usedCols.length ? `<div class="nlegend small" style="margin-top:6px">${usedCols.map((c) => `<span><span class="ndot" style="background:var(--${couleurOf[c]}-acc)"></span>${esc(c)}</span>`).join('')}</div>` : ''}
+
+    <h2 class="section-title">Ton rythme</h2>
+    <div class="card" style="padding:14px;display:flex;flex-direction:column;gap:10px">
+      <div class="between"><b style="white-space:nowrap">30 jours</b><div class="seg rseg" style="width:auto"><button data-mode="rep" aria-pressed="true" style="padding:0 12px">Réponses</button><button data-mode="min" aria-pressed="false" style="padding:0 12px">Temps</button></div></div>
+      <div id="graphe">${graphe()}</div>
+      ${avec.length ? `<div class="nlegend small">${avec.map((x) => `<span><span class="ndot" style="background:var(--${x.m.couleur}-acc)"></span>${esc(x.m.code)}</span>`).join('')}</div>` : ''}
     </div>
+    <div class="card" style="padding:14px;display:flex;flex-direction:column;gap:8px">
+      <b>Cette semaine</b><span class="small muted" style="margin-top:-6px">par rapport à la semaine dernière</span>
+      <div class="cmp"><span>Réponses</span><b>${S0.rep}</b>${evo(S0.rep, S1.rep)}</div>
+      <div class="cmp"><span>Temps</span><b>${fmtMin(S0.min)}</b>${evo(S0.min, S1.min)}</div>
+      <div class="cmp"><span>Jours révisés</span><b>${S0.jours}/7</b><span class="small muted">${S1.jours}/7 avant</span></div>
+    </div>
+    <div class="records">
+      <div class="card rec"><span class="small muted">Meilleure journée</span><b>${meilleurJour && u.jours[meilleurJour] ? plural(u.jours[meilleurJour], 'réponse') : '–'}</b><span class="small muted">${meilleurJour && u.jours[meilleurJour] ? fmtD(meilleurJour) : ''}</span></div>
+      <div class="card rec"><span class="small muted">Plus longue séance</span><b>${plusLong && temps[plusLong] ? fmtMin(Math.round(temps[plusLong] / 60)) : '–'}</b><span class="small muted">${plusLong && temps[plusLong] ? fmtD(plusLong) : ''}</span></div>
+      <div class="card rec"><span class="small muted">Meilleure série</span><b>${plural(best, 'jour')}</b><span class="small muted">${best > 1 && bestStart ? `du ${fmtD(bestStart)}` : ''}</span></div>
+    </div>
+
+    <h2 class="section-title">Ta mémoire</h2>
+    <div class="card" style="padding:14px;display:flex;flex-direction:column;gap:10px">
+      <div><b class="title" style="font-size:30px">${gravees}</b> <span class="small muted">${gravees > 1 ? 'cartes gravées' : 'carte gravée'}</span></div>${reussite != null ? `<span class="chip" style="align-self:flex-start">${reussite} % de bonnes réponses</span>` : ''}
+      <span class="small muted" style="margin-top:-6px">Cartes en boîte 4 ou 5 : revues plusieurs fois avec succès, à des jours d’écart. Elles sont ancrées dans ta mémoire à long terme.</span>
+      ${enMemoire ? `<div class="pile"><span style="flex:${appr};background:var(--ghost)"></span><span style="flex:${consol};background:#9DB8F0"></span><span style="flex:${gravees};background:#4F7FE0"></span></div>
+      <div class="nlegend small"><span><span class="ndot" style="background:var(--ghost);box-shadow:inset 0 0 0 1.5px var(--line)"></span>En apprentissage · ${appr}</span><span><span class="ndot" style="background:#9DB8F0"></span>En consolidation · ${consol}</span><span><span class="ndot" style="background:#4F7FE0"></span>Gravées · ${gravees}</span></div>` : '<span class="small muted">Réponds à quelques questions pour voir ta mémoire se remplir.</span>'}
+    </div>
+    ${forts.length || faibles.length ? `<div class="card" style="padding:14px;display:flex;flex-direction:column;gap:8px">
+      ${forts.length ? `<b>Tes points forts</b>${forts.map((n) => `<div class="nrow"><span class="chip m c-${n.couleur} sm">${esc(n.code)}</span><span class="small" style="flex:1">${esc(n.nom)}</span><span class="small muted">${Math.round(n.score * 100)} %</span></div>`).join('')}` : ''}
+      ${faibles.length ? `<b style="margin-top:6px">À retravailler</b>${faibles.map((n, i) => `<div class="nrow"><span class="chip m c-${n.couleur} sm">${esc(n.code)}</span><span class="small" style="flex:1">${esc(n.nom)}</span><button class="btn soft sm" data-faible="${i}">Réviser</button></div>`).join('')}` : ''}
+    </div>` : ''}
+
     <h2 class="section-title">Par matière</h2>
-    <div class="list">${all.filter((x) => x.contenu).map((x) => `
+    <div class="list">${avec.map((x) => `
       <a class="card c-${x.m.couleur}" href="#/matiere/${encodeURIComponent(x.m.code)}" style="padding:14px;display:flex;flex-direction:column;gap:8px;text-decoration:none">
         <div class="between"><b class="title" style="color:var(--m-ink)">${esc(x.m.code)}</b><b>${pct(x.maitrise)}</b></div>
         <span class="bar"><span style="width:${x.maitrise}%"></span></span>
-        <span class="small muted">${x.due} à revoir · ${x.neufs} jamais ${x.neufs > 1 ? 'vus' : 'vu'} · ${plural(x.erreurs, 'erreur')} en attente</span>
+        <span class="small muted">Vu : ${x.vus}/${x.total} · ${x.due} à revoir · ${plural(x.erreurs, 'erreur')} en attente</span>
       </a>`).join('') || '<div class="card empty muted">Rien pour l’instant : importe du contenu pour commencer.</div>'}</div>`;
+
+  $app.querySelectorAll('[data-mode]').forEach((b) => b.onclick = () => { mode = b.dataset.mode; $app.querySelectorAll('[data-mode]').forEach((x) => x.setAttribute('aria-pressed', String(x === b))); document.getElementById('graphe').innerHTML = graphe(); });
+  $app.querySelectorAll('[data-faible]').forEach((b) => b.onclick = () => { const n = faibles[Number(b.dataset.faible)]; startSession({ code: n.code, kind: 'notion', ids: n.ids, titre: n.nom }); });
   $app.querySelectorAll('[data-stat]').forEach((b) => b.onclick = () => openSheet(`
     <div class="between"><h2>Tes chiffres</h2><button class="icon-btn" data-close aria-label="Fermer">${ic('close')}</button></div>
     <ul class="list" style="list-style:none;margin:0;padding:0;gap:12px">
+      <li><b>${totalMin ? fmtMin(totalMin) : '0 min'} de révision</b><br><span class="small muted">Temps passé sur les questions depuis le 13 novembre, sur ${plural(joursTravailles, 'jour')} de révision.</span></li>
+      <li><b>${plural(bonnes, 'bonne réponse', 'bonnes réponses')}</b><br><span class="small muted">Sur ${plural(totalRep, 'réponse')} au total${reussite != null ? `, soit ${reussite} % de réussite` : ''}.</span></li>
       <li><b>Série actuelle : ${plural(s, 'jour')}</b><br><span class="small muted">${s ? `Tu révises chaque jour depuis le ${fmtD(runStart)}. Une réponse dans la journée suffit à la prolonger.` : 'Réponds à une question aujourd’hui pour lancer une série.'}</span></li>
-      <li><b>Meilleure série : ${plural(best, 'jour')}</b><br><span class="small muted">${best && bestStart ? (best > 1 ? `Ton record de jours de révision d’affilée, du ${fmtD(bestStart)} au ${fmtD(bestEnd)}.` : `Ton record de jours de révision d’affilée (le ${fmtD(bestEnd)}).`) : 'Pas encore de série.'}</span></li>
+      <li><b>Meilleure série : ${plural(best, 'jour')}</b><br><span class="small muted">${best && bestStart ? (best > 1 ? `Du ${fmtD(bestStart)} au ${fmtD(bestEnd)}.` : `Le ${fmtD(bestEnd)}.`) : 'Pas encore de série.'}</span></li>
       <li><b>${plural(joursArc, 'journée arc-en-ciel', 'journées arc-en-ciel')} 🌈</b><br><span class="small muted">${joursArc ? 'Les jours où tu as révisé tes' : 'Révise tes'} ${NB_ARC()} matières dans la même journée${joursArc ? '.' : ' pour débloquer Stroop arc-en-ciel.'}</span></li>
-      <li><b>${plural(totalRep, 'réponse')}</b><br><span class="small muted">Sur ${plural(joursTravailles, 'jour')} de révision${totalMin ? `, pour environ ${fmtMin(totalMin)} de révision depuis le 13 novembre` : ''}.</span></li>
     </ul>
     <button class="btn primary block" data-close>OK</button>`));
 }
