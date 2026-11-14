@@ -11,7 +11,7 @@ import * as S from './store.js';
 import { today, isDue, dueDate, nextState, mastery, notionStats, seenCount, prioritize, shuffle, streak, INTERVALS } from './leitner.js';
 import { TYPES, TYPE_KEYS, NIVEAUX, typeLabel, timeFor, formatOf, checkCourte, sameSet, resolveVariants, nbVariantes, normalize } from './types.js';
 
-const VERSION = '2.10.6';
+const VERSION = '2.11.0';
 const $app = document.getElementById('app');
 const $tab = document.getElementById('tabbar');
 const $halos = document.getElementById('halos');
@@ -903,6 +903,10 @@ function laboEcoute() {
       <div class="two"><button class="btn soft" id="lbip">${ic('play')}Lancer les bips</button><button class="btn plain" id="lstop">Arrêter</button></div><span class="small" id="lbipetat" style="font-weight:700"></span></div>
     <div class="field">2 bis. Avec Spotify<span class="small muted" style="font-weight:600">Lance une musique sur Spotify, reviens ici et essaie les deux façons (20 s de bips chacune). Note pour chacune : Spotify se met-il en pause ? Reprend-il tout seul à la fin ?</span>
       <div class="two"><button class="btn soft" id="lbipA">Façon A</button><button class="btn soft" id="lbipB">Façon B</button></div><span class="small" id="lbipABetat" style="font-weight:700"></span></div>
+    <div class="field">4. Voix naturelle (Piper)<span class="small muted" style="font-weight:600">Tout est calculé sur ton téléphone : le texte ne quitte jamais l’appli. Seul le modèle de voix (un fichier public, sans rien de toi) est téléchargé une fois, en Wi-Fi de préférence.</span>
+      <div class="pills" id="pvx">${[['fr_FR-siwis-medium', 'Siwis (féminine) · 63 Mo'], ['fr_FR-tom-medium', 'Tom (masculine) · 63 Mo'], ['fr_FR-upmc-medium', 'UPMC · 74 Mo'], ['fr_FR-siwis-low', 'Siwis légère · 28 Mo']].map(([k, l], i) => `<button class="pill" data-pv="${k}" aria-pressed="${i === 0}">${l}</button>`).join('')}</div>
+      <label class="field"><span class="sr">Texte à lire</span><textarea id="ptxt" rows="3">Bonjour ! Je suis une voix de synthèse qui fonctionne directement sur ton téléphone. Est-ce que je te parais plus naturelle que la voix habituelle ?</textarea></label>
+      <button class="btn soft" id="pgo">${ic('play')}Générer et écouter</button><span class="small" id="petat" style="font-weight:700"></span></div>
     <div class="field">3. Voix écran verrouillé<span class="small muted" style="font-weight:600">Même test avec la voix du téléphone : lance la lecture, verrouille, écoute si elle continue.</span>
       <button class="btn soft" id="lvoixlock">${ic('play')}Lire un long passage</button></div>`);
   const phrase = 'Bonjour, je suis la voix du téléphone. Ceci est un simple test de lecture, pour savoir si je continue à parler quand l’écran est verrouillé.';
@@ -937,6 +941,34 @@ function laboEcoute() {
   };
   sh.back.querySelector('#lbipA').onclick = () => essai('transient-solo', 'Façon A');
   sh.back.querySelector('#lbipB').onclick = () => essai('playback', 'Façon B');
+  let pvoix = 'fr_FR-siwis-medium';
+  sh.back.querySelectorAll('[data-pv]').forEach((b) => b.onclick = () => { pvoix = b.dataset.pv; sh.back.querySelectorAll('[data-pv]').forEach((x) => x.setAttribute('aria-pressed', String(x === b))); });
+  sh.back.querySelector('#pgo').onclick = async () => {
+    const etat = (t) => { sh.back.querySelector('#petat').textContent = t; };
+    const btn = sh.back.querySelector('#pgo'); btn.disabled = true;
+    try {
+      etat('Chargement du moteur…');
+      const { TtsSession } = await import('../vendor/piper/piper-tts-web.js');
+      const base = new URL('../vendor/piper/', import.meta.url).href;
+      const t0 = performance.now();
+      const session = await TtsSession.create({
+        voiceId: pvoix,
+        progress: (p) => { if (p.total) etat(`Téléchargement de la voix : ${Math.round((p.loaded * 100) / p.total)} %`); },
+        wasmPaths: { onnxWasm: base + 'ort/', piperData: base + 'phonemize/piper_phonemize.data', piperWasm: base + 'phonemize/piper_phonemize.wasm' }
+      });
+      const t1 = performance.now(); etat('Génération de l’audio…');
+      const texte = sh.back.querySelector('#ptxt').value.trim() || 'Bonjour.';
+      const wav = await Promise.race([session.predict(texte), new Promise((_, rej) => setTimeout(() => rej(new Error('trop long (plus de 2 minutes)')), 120000))]);
+      const t2 = performance.now();
+      try { if (navigator.audioSession) navigator.audioSession.type = 'playback'; } catch {}
+      audio?.pause(); audio = new Audio(URL.createObjectURL(wav));
+      audio.onended = () => { try { if (navigator.audioSession) navigator.audioSession.type = 'ambient'; } catch {} };
+      await audio.play();
+      const duree = audio.duration && isFinite(audio.duration) ? audio.duration : null;
+      etat(`Voix prête en ${((t1 - t0) / 1000).toFixed(1)} s · audio généré en ${((t2 - t1) / 1000).toFixed(1)} s${duree ? ` pour ${duree.toFixed(1)} s de parole` : ''}.`);
+    } catch (e) { etat('Erreur : ' + (e?.message || e)); console.error(e); }
+    btn.disabled = false;
+  };
   sh.back.querySelector('#lstop').onclick = () => { audio?.pause(); synth?.cancel(); };
   sh.back.querySelector('#lvoixlock').onclick = () => dire(Array(6).fill(phrase).join(' '), voix()[0]);
 }

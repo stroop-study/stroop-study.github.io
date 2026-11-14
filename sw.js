@@ -1,7 +1,9 @@
 // Service worker : met l'appli en cache pour qu'elle s'ouvre même sans réseau.
 // Les données (cartes, progression) sont gérées hors ligne par Firestore, pas ici.
-const VERSION = 'v2.10.6';
+const VERSION = 'v2.11.0';
 const CACHE = `stroop-${VERSION}`;
+// Moteur de voix (gros fichiers qui ne changent pas) : cache séparé, gardé d'une version à l'autre.
+const VENDOR = 'vendor-piper-1';
 const SHELL = [
   './', 'index.html', 'manifest.webmanifest', 'css/app.css',
   'js/app.js', 'js/store.js', 'js/leitner.js', 'js/types.js', 'js/recherche.js', 'js/figures.js', 'js/sons.js', 'js/notifs.js', 'js/firebase.js', 'js/firebase-config.js',
@@ -33,6 +35,10 @@ self.addEventListener('fetch', (e) => {
   const cacheable = sameOrigin || url.hostname === 'www.gstatic.com' || url.hostname.startsWith('fonts.');
   if (!cacheable) return;
 
+  if (sameOrigin && url.pathname.includes('/vendor/')) {
+    e.respondWith(caches.open(VENDOR).then((c) => c.match(req).then((hit) => hit || fetch(req).then((res) => { if (res.ok) c.put(req, res.clone()); return res; }))));
+    return;
+  }
   // Réseau d'abord pour l'appli (pour recevoir les mises à jour), cache si hors ligne.
   if (sameOrigin) {
     e.respondWith(
