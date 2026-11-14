@@ -11,7 +11,7 @@ import * as S from './store.js';
 import { today, isDue, dueDate, nextState, mastery, notionStats, seenCount, prioritize, shuffle, streak, INTERVALS } from './leitner.js';
 import { TYPES, TYPE_KEYS, NIVEAUX, typeLabel, timeFor, formatOf, checkCourte, sameSet, resolveVariants, nbVariantes, normalize } from './types.js';
 
-const VERSION = '2.10.1';
+const VERSION = '2.10.2';
 const $app = document.getElementById('app');
 const $tab = document.getElementById('tabbar');
 const $halos = document.getElementById('halos');
@@ -742,7 +742,7 @@ function planNotion(items) {
 
 /* ================= Avant de dormir ================= */
 // Flashcards déjà rencontrées (on consolide, on n'apprend pas du neuf), sans chrono ni son, couleurs chaudes.
-const estSoir = () => { const h = new Date().getHours(); return h >= 20 || h < 4; };
+const estSoir = () => { const h = new Date().getHours(); return h >= 21 || h < 4; };
 function planNuit(items, prog) {
   const fc = items.filter((it) => it.type === 'flashcard');
   const vues = fc.filter((it) => prog[it.id]?.box);
