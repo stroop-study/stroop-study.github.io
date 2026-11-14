@@ -1811,8 +1811,9 @@ if ('serviceWorker' in navigator) {
     setInterval(verifier, 30 * 60 * 1000);
   }).catch(() => {}));
   let rechargee = false;
+  const avaitUnSW = !!navigator.serviceWorker.controller; // premier lancement : pas de rechargement
   navigator.serviceWorker.addEventListener('controllerchange', () => {
-    if (rechargee) return;
+    if (rechargee || !avaitUnSW) return;
     const recharger = () => { rechargee = true; sessionStorage.setItem('stroop-maj', '1'); location.reload(); };
     if (location.hash.startsWith('#/session')) window.addEventListener('hashchange', function f() { if (!location.hash.startsWith('#/session')) { window.removeEventListener('hashchange', f); recharger(); } });
     else recharger();
