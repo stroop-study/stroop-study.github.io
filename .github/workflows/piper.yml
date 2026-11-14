@@ -1,0 +1,47 @@
+# Copie dans l'appli (dossier vendor/) le moteur de voix Piper et ONNX Runtime, pour ne charger
+# aucun code depuis un site tiers pendant l'utilisation. Aucune donnée de l'appli n'est envoyée.
+# Se lance tout seul quand ce fichier change, ou à la main (Actions → Piper → Run workflow).
+name: Piper
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/piper.yml']
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency: piper
+jobs:
+  copier:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Télécharger les paquets
+        run: |
+          mkdir -p /tmp/p && cd /tmp/p && npm init -y >/dev/null
+          npm install --no-audit --no-fund @mintplex-labs/piper-tts-web@1.0.4
+      - name: Copier dans vendor/
+        run: |
+          rm -rf vendor/piper && mkdir -p vendor/piper/ort
+          P=/tmp/p/node_modules/@mintplex-labs/piper-tts-web
+          cp -r $P/dist/. vendor/piper/
+          cp $P/package.json vendor/piper/package.json
+          O=/tmp/p/node_modules/onnxruntime-web
+          cp $O/package.json vendor/piper/ort/package.json
+          cp $O/dist/*.wasm vendor/piper/ort/ 2>/dev/null || true
+          cp $O/dist/*.mjs vendor/piper/ort/ 2>/dev/null || true
+          cp $O/dist/ort.min.js vendor/piper/ort/ 2>/dev/null || true
+          (cd /tmp/p && npm ls --all > /tmp/arbre.txt || true)
+          cp /tmp/arbre.txt vendor/piper/ARBRE.txt
+          find vendor/piper -type f -printf '%s\t%p\n' | sort -k2 > vendor/piper/FICHIERS.txt
+          du -sh vendor/piper
+      - name: Enregistrer
+        run: |
+          git config user.name "github-actions"
+          git config user.email "github-actions@users.noreply.github.com"
+          git add vendor/piper
+          git commit -m "vendor : moteur Piper (piper-tts-web 1.0.4) et ONNX Runtime" || echo "rien de neuf"
+          git push

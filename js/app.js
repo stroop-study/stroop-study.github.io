@@ -11,7 +11,7 @@ import * as S from './store.js';
 import { today, isDue, dueDate, nextState, mastery, notionStats, seenCount, prioritize, shuffle, streak, INTERVALS } from './leitner.js';
 import { TYPES, TYPE_KEYS, NIVEAUX, typeLabel, timeFor, formatOf, checkCourte, sameSet, resolveVariants, nbVariantes, normalize } from './types.js';
 
-const VERSION = '2.10.5';
+const VERSION = '2.10.6';
 const $app = document.getElementById('app');
 const $tab = document.getElementById('tabbar');
 const $halos = document.getElementById('halos');
@@ -901,6 +901,8 @@ function laboEcoute() {
     <div class="field">1. Les voix du téléphone<div id="lvx" class="list"></div></div>
     <div class="field">2. Écran verrouillé<span class="small muted" style="font-weight:600">Lance le son (un bip toutes les 5 s pendant 1 min 30), verrouille ton téléphone, puis écoute : les bips continuent-ils ? Les commandes apparaissent-elles sur l’écran verrouillé ?</span>
       <div class="two"><button class="btn soft" id="lbip">${ic('play')}Lancer les bips</button><button class="btn plain" id="lstop">Arrêter</button></div><span class="small" id="lbipetat" style="font-weight:700"></span></div>
+    <div class="field">2 bis. Avec Spotify<span class="small muted" style="font-weight:600">Lance une musique sur Spotify, reviens ici et essaie les deux façons (20 s de bips chacune). Note pour chacune : Spotify se met-il en pause ? Reprend-il tout seul à la fin ?</span>
+      <div class="two"><button class="btn soft" id="lbipA">Façon A</button><button class="btn soft" id="lbipB">Façon B</button></div><span class="small" id="lbipABetat" style="font-weight:700"></span></div>
     <div class="field">3. Voix écran verrouillé<span class="small muted" style="font-weight:600">Même test avec la voix du téléphone : lance la lecture, verrouille, écoute si elle continue.</span>
       <button class="btn soft" id="lvoixlock">${ic('play')}Lire un long passage</button></div>`);
   const phrase = 'Bonjour, je suis la voix du téléphone. Ceci est un simple test de lecture, pour savoir si je continue à parler quand l’écran est verrouillé.';
@@ -923,6 +925,18 @@ function laboEcoute() {
     audio.play().catch((e) => { etat.textContent = 'Lecture refusée par le téléphone : ' + e.name + ' (' + e.message + ')'; });
     if ('mediaSession' in navigator) { navigator.mediaSession.metadata = new MediaMetadata({ title: 'Test du mode écoute', artist: 'Stroop Study', artwork: [{ src: 'assets/icons/icon-512.png', sizes: '512x512', type: 'image/png' }] }); navigator.mediaSession.setActionHandler('pause', () => audio?.pause()); navigator.mediaSession.setActionHandler('play', () => audio?.play()); }
   };
+  // A = « transient-solo » (met les autres sons en pause, ils peuvent reprendre à la fin) ; B = « playback » puis on rend la main.
+  const essai = (type, nom) => {
+    const etat = sh.back.querySelector('#lbipABetat');
+    try { if (navigator.audioSession) navigator.audioSession.type = type; } catch {}
+    audio?.pause(); audio = new Audio(wavBips(20));
+    const rendre = () => { try { if (navigator.audioSession) navigator.audioSession.type = 'ambient'; } catch {} etat.textContent = `${nom} terminée : Spotify a-t-il repris tout seul ?`; };
+    audio.onended = rendre; audio.onpause = () => { if (!audio.ended) rendre(); };
+    audio.onplaying = () => { etat.textContent = `${nom} en cours (20 s)…`; };
+    audio.play().catch((e) => { etat.textContent = `${nom} : lecture refusée (${e.name})`; });
+  };
+  sh.back.querySelector('#lbipA').onclick = () => essai('transient-solo', 'Façon A');
+  sh.back.querySelector('#lbipB').onclick = () => essai('playback', 'Façon B');
   sh.back.querySelector('#lstop').onclick = () => { audio?.pause(); synth?.cancel(); };
   sh.back.querySelector('#lvoixlock').onclick = () => dire(Array(6).fill(phrase).join(' '), voix()[0]);
 }
