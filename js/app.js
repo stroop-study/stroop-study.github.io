@@ -11,7 +11,7 @@ import * as S from './store.js';
 import { today, isDue, dueDate, nextState, mastery, notionStats, seenCount, prioritize, shuffle, streak, INTERVALS } from './leitner.js';
 import { TYPES, TYPE_KEYS, NIVEAUX, typeLabel, timeFor, formatOf, checkCourte, sameSet, resolveVariants, nbVariantes, normalize } from './types.js';
 
-const VERSION = '2.12.0';
+const VERSION = '2.12.1';
 const $app = document.getElementById('app');
 const $tab = document.getElementById('tabbar');
 const $halos = document.getElementById('halos');
@@ -1803,5 +1803,19 @@ document.addEventListener('change', (e) => {
 }, true);
 
 if ('serviceWorker' in navigator) {
-  window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));
+  // Mise à jour automatique : on vérifie s'il y a une nouvelle version à chaque retour dans l'appli,
+  // et on recharge dès qu'elle est installée (sauf en pleine session de révision).
+  window.addEventListener('load', () => navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).then((reg) => {
+    const verifier = () => reg.update().catch(() => {});
+    document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') verifier(); });
+    setInterval(verifier, 30 * 60 * 1000);
+  }).catch(() => {}));
+  let rechargee = false;
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (rechargee) return;
+    const recharger = () => { rechargee = true; sessionStorage.setItem('stroop-maj', '1'); location.reload(); };
+    if (location.hash.startsWith('#/session')) window.addEventListener('hashchange', function f() { if (!location.hash.startsWith('#/session')) { window.removeEventListener('hashchange', f); recharger(); } });
+    else recharger();
+  });
+  if (sessionStorage.getItem('stroop-maj')) { sessionStorage.removeItem('stroop-maj'); setTimeout(() => toast(`Stroop est à jour (version ${VERSION})`), 1200); }
 }
