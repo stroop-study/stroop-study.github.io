@@ -1,6 +1,6 @@
 // Service worker : met l'appli en cache pour qu'elle s'ouvre même sans réseau.
 // Les données (cartes, progression) sont gérées hors ligne par Firestore, pas ici.
-const VERSION = 'v2.12.1';
+const VERSION = 'v2.12.2';
 const CACHE = `stroop-${VERSION}`;
 // Moteur de voix (gros fichiers qui ne changent pas) : cache séparé, gardé d'une version à l'autre.
 const VENDOR = 'vendor-piper-1';

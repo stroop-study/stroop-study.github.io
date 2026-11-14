@@ -11,7 +11,7 @@ import * as S from './store.js';
 import { today, isDue, dueDate, nextState, mastery, notionStats, seenCount, prioritize, shuffle, streak, INTERVALS } from './leitner.js';
 import { TYPES, TYPE_KEYS, NIVEAUX, typeLabel, timeFor, formatOf, checkCourte, sameSet, resolveVariants, nbVariantes, normalize } from './types.js';
 
-const VERSION = '2.12.1';
+const VERSION = '2.12.2';
 const $app = document.getElementById('app');
 const $tab = document.getElementById('tabbar');
 const $halos = document.getElementById('halos');
@@ -1057,7 +1057,15 @@ async function viewSession() {
     else return finish();
   }
   if (!byId[session.ids[session.i]]) { session.i++; return viewSession(); }
-  const it = resolveVariants(byId[session.ids[session.i]], session.vix?.[session.i] ?? null);
+  let it = resolveVariants(byId[session.ids[session.i]], session.vix?.[session.i] ?? null);
+  // QCM : une fois sur deux, une proposition est retirée au hasard, pour que le nombre de bonnes réponses
+  // varie (3 sur 4, 2 sur 3, 3 sur 3…) et qu'on ne puisse pas deviner en cherchant « la seule fausse ».
+  if (formatOf(it) === 'qcm' && !it.lettres && it.choix?.length >= 4 && Math.random() < 0.5) {
+    const candidats = it.choix.map((_, i) => i).filter((i) => !(it.bonnes.length === 1 && it.bonnes.includes(i)));
+    const retire = candidats[Math.floor(Math.random() * candidats.length)];
+    const garde = it.choix.map((_, i) => i).filter((i) => i !== retire);
+    it = { ...it, choix: garde.map((i) => it.choix[i]), bonnes: it.bonnes.filter((b) => b !== retire).map((b) => garde.indexOf(b)) };
+  }
   const autreSituation = session.vix?.[session.i] > 0;
   const pBefore = { ...(prog[it.id] || {}) };
   const fmt = formatOf(it);
