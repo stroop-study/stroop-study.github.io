@@ -1,12 +1,12 @@
 // Service worker : met l'appli en cache pour qu'elle s'ouvre même sans réseau.
 // Les données (cartes, progression) sont gérées hors ligne par Firestore, pas ici.
-const VERSION = 'v2.11.0';
+const VERSION = 'v2.11.1';
 const CACHE = `stroop-${VERSION}`;
 // Moteur de voix (gros fichiers qui ne changent pas) : cache séparé, gardé d'une version à l'autre.
 const VENDOR = 'vendor-piper-1';
 const SHELL = [
   './', 'index.html', 'manifest.webmanifest', 'css/app.css',
-  'js/app.js', 'js/store.js', 'js/leitner.js', 'js/types.js', 'js/recherche.js', 'js/figures.js', 'js/sons.js', 'js/notifs.js', 'js/firebase.js', 'js/firebase-config.js',
+  'js/app.js', 'js/store.js', 'js/leitner.js', 'js/types.js', 'js/recherche.js', 'js/voix.js', 'js/figures.js', 'js/sons.js', 'js/notifs.js', 'js/firebase.js', 'js/firebase-config.js',
   'assets/stroop/stroop-contente.webp', 'assets/stroop/stroop-dodo.webp',
   'assets/stroop/stroop-fete.webp', 'assets/stroop/stroop-sport.webp', 'assets/stroop/stroop-etude.webp', 'assets/stroop/stroop-arcenciel.webp',
   'assets/icons/icon-192.png', 'assets/icons/apple-touch-icon.png'

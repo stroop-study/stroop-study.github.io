@@ -11,7 +11,7 @@ import * as S from './store.js';
 import { today, isDue, dueDate, nextState, mastery, notionStats, seenCount, prioritize, shuffle, streak, INTERVALS } from './leitner.js';
 import { TYPES, TYPE_KEYS, NIVEAUX, typeLabel, timeFor, formatOf, checkCourte, sameSet, resolveVariants, nbVariantes, normalize } from './types.js';
 
-const VERSION = '2.11.0';
+const VERSION = '2.11.1';
 const $app = document.getElementById('app');
 const $tab = document.getElementById('tabbar');
 const $halos = document.getElementById('halos');
@@ -901,12 +901,14 @@ function laboEcoute() {
     <div class="field">1. Les voix du téléphone<div id="lvx" class="list"></div></div>
     <div class="field">2. Écran verrouillé<span class="small muted" style="font-weight:600">Lance le son (un bip toutes les 5 s pendant 1 min 30), verrouille ton téléphone, puis écoute : les bips continuent-ils ? Les commandes apparaissent-elles sur l’écran verrouillé ?</span>
       <div class="two"><button class="btn soft" id="lbip">${ic('play')}Lancer les bips</button><button class="btn plain" id="lstop">Arrêter</button></div><span class="small" id="lbipetat" style="font-weight:700"></span></div>
-    <div class="field">2 bis. Avec Spotify<span class="small muted" style="font-weight:600">Lance une musique sur Spotify, reviens ici et essaie les deux façons (20 s de bips chacune). Note pour chacune : Spotify se met-il en pause ? Reprend-il tout seul à la fin ?</span>
-      <div class="two"><button class="btn soft" id="lbipA">Façon A</button><button class="btn soft" id="lbipB">Façon B</button></div><span class="small" id="lbipABetat" style="font-weight:700"></span></div>
-    <div class="field">4. Voix naturelle (Piper)<span class="small muted" style="font-weight:600">Tout est calculé sur ton téléphone : le texte ne quitte jamais l’appli. Seul le modèle de voix (un fichier public, sans rien de toi) est téléchargé une fois, en Wi-Fi de préférence.</span>
-      <div class="pills" id="pvx">${[['fr_FR-siwis-medium', 'Siwis (féminine) · 63 Mo'], ['fr_FR-tom-medium', 'Tom (masculine) · 63 Mo'], ['fr_FR-upmc-medium', 'UPMC · 74 Mo'], ['fr_FR-siwis-low', 'Siwis légère · 28 Mo']].map(([k, l], i) => `<button class="pill" data-pv="${k}" aria-pressed="${i === 0}">${l}</button>`).join('')}</div>
-      <label class="field"><span class="sr">Texte à lire</span><textarea id="ptxt" rows="3">Bonjour ! Je suis une voix de synthèse qui fonctionne directement sur ton téléphone. Est-ce que je te parais plus naturelle que la voix habituelle ?</textarea></label>
-      <button class="btn soft" id="pgo">${ic('play')}Générer et écouter</button><span class="small" id="petat" style="font-weight:700"></span></div>
+    <div class="field">2 bis. Avec Spotify<span class="small muted" style="font-weight:600">Lance une musique sur Spotify, reviens ici et essaie chaque façon (5 s de bips). Note pour chacune : Spotify se met-il en pause, baisse-t-il, reprend-il tout seul à la fin ?</span>
+      <div class="two"><button class="btn soft" id="lbipC">Façon C</button><button class="btn soft" id="lbipD">Façon D</button></div><div class="two"><button class="btn plain" id="lbipA">Façon A</button><button class="btn plain" id="lbipB">Façon B</button></div><span class="small" id="lbipABetat" style="font-weight:700"></span></div>
+    <div class="field">4. Voix naturelles<span class="small muted" style="font-weight:600">Calculées sur ton téléphone : le texte ne quitte jamais l’appli. Chaque voix (fichier public, sans rien de toi) se télécharge une fois, en Wi-Fi de préférence.</span>
+      <div class="pills" id="pvx"></div>
+      <div class="row" id="pmls" style="gap:8px;display:none"><button class="btn plain sm" id="pmoins">−</button><span class="small" style="font-weight:800;flex:1;text-align:center" id="pnum">Voix n° 0</span><button class="btn plain sm" id="pplus">+</button><button class="btn plain sm" id="phasard">Au hasard</button></div>
+      <div class="seg" id="pvit"><button data-vit="1" aria-pressed="true">Vitesse normale</button><button data-vit="0.85" aria-pressed="false">Plus lente</button></div>
+      <label class="field"><span class="sr">Texte à lire</span><textarea id="ptxt" rows="3">Bonjour ! Je suis une voix de synthèse qui fonctionne directement sur ton téléphone. Est-ce que je te parais naturelle ?</textarea></label>
+      <button class="btn soft" id="pgo">${ic('play')}Écouter cette voix</button><span class="small" id="petat" style="font-weight:700"></span></div>
     <div class="field">3. Voix écran verrouillé<span class="small muted" style="font-weight:600">Même test avec la voix du téléphone : lance la lecture, verrouille, écoute si elle continue.</span>
       <button class="btn soft" id="lvoixlock">${ic('play')}Lire un long passage</button></div>`);
   const phrase = 'Bonjour, je suis la voix du téléphone. Ceci est un simple test de lecture, pour savoir si je continue à parler quand l’écran est verrouillé.';
@@ -930,42 +932,55 @@ function laboEcoute() {
     if ('mediaSession' in navigator) { navigator.mediaSession.metadata = new MediaMetadata({ title: 'Test du mode écoute', artist: 'Stroop Study', artwork: [{ src: 'assets/icons/icon-512.png', sizes: '512x512', type: 'image/png' }] }); navigator.mediaSession.setActionHandler('pause', () => audio?.pause()); navigator.mediaSession.setActionHandler('play', () => audio?.play()); }
   };
   // A = « transient-solo » (met les autres sons en pause, ils peuvent reprendre à la fin) ; B = « playback » puis on rend la main.
-  const essai = (type, nom) => {
+  // C = comme A, mais on libère complètement le son à la fin (élément vidé, session « auto ») ; D = Spotify baisse sans s'arrêter.
+  const essai = (type, nom, liberer = false) => {
     const etat = sh.back.querySelector('#lbipABetat');
     try { if (navigator.audioSession) navigator.audioSession.type = type; } catch {}
-    audio?.pause(); audio = new Audio(wavBips(20));
-    const rendre = () => { try { if (navigator.audioSession) navigator.audioSession.type = 'ambient'; } catch {} etat.textContent = `${nom} terminée : Spotify a-t-il repris tout seul ?`; };
-    audio.onended = rendre; audio.onpause = () => { if (!audio.ended) rendre(); };
-    audio.onplaying = () => { etat.textContent = `${nom} en cours (20 s)…`; };
+    audio?.pause(); audio = new Audio(wavBips(5));
+    const rendre = () => {
+      if (liberer) { audio.removeAttribute('src'); audio.load(); }
+      try { if (navigator.audioSession) navigator.audioSession.type = liberer ? 'auto' : 'ambient'; } catch {}
+      etat.textContent = `${nom} terminée : Spotify a-t-il repris tout seul ?`;
+    };
+    audio.onended = rendre;
+    audio.onplaying = () => { etat.textContent = `${nom} en cours (5 s)…`; };
     audio.play().catch((e) => { etat.textContent = `${nom} : lecture refusée (${e.name})`; });
   };
   sh.back.querySelector('#lbipA').onclick = () => essai('transient-solo', 'Façon A');
   sh.back.querySelector('#lbipB').onclick = () => essai('playback', 'Façon B');
-  let pvoix = 'fr_FR-siwis-medium';
-  sh.back.querySelectorAll('[data-pv]').forEach((b) => b.onclick = () => { pvoix = b.dataset.pv; sh.back.querySelectorAll('[data-pv]').forEach((x) => x.setAttribute('aria-pressed', String(x === b))); });
+  sh.back.querySelector('#lbipC').onclick = () => essai('transient-solo', 'Façon C', true);
+  sh.back.querySelector('#lbipD').onclick = () => essai('transient', 'Façon D', true);
+  let pvoix = 'tom', pnum = 0, pvit = 1, nbLoc = 125;
+  const dessinerVoix = async () => {
+    const V = await import('./voix.js');
+    const box = sh.back.querySelector('#pvx');
+    box.innerHTML = (await Promise.all(V.VOIX.map(async (v) => `<button class="pill" data-pv="${v.id}" aria-pressed="${v.id === pvoix}">${v.genre === 'm' ? '♂' : v.genre === 'f' ? '♀' : '♂♀'} ${esc(v.nom)} <span class="muted">${(await V.estTelechargee(v)) ? '✓' : v.mo + ' Mo'}</span></button>`))).join('');
+    box.querySelectorAll('[data-pv]').forEach((b) => b.onclick = () => { pvoix = b.dataset.pv; dessinerVoix(); });
+    sh.back.querySelector('#pmls').style.display = pvoix === 'mls' ? 'flex' : 'none';
+    sh.back.querySelector('#pnum').textContent = `Voix n° ${pnum} sur ${nbLoc}`;
+  };
+  dessinerVoix();
+  sh.back.querySelector('#pmoins').onclick = () => { pnum = (pnum - 1 + nbLoc) % nbLoc; dessinerVoix(); };
+  sh.back.querySelector('#pplus').onclick = () => { pnum = (pnum + 1) % nbLoc; dessinerVoix(); };
+  sh.back.querySelector('#phasard').onclick = () => { pnum = Math.floor(Math.random() * nbLoc); dessinerVoix(); };
+  sh.back.querySelectorAll('[data-vit]').forEach((b) => b.onclick = () => { pvit = Number(b.dataset.vit); sh.back.querySelectorAll('[data-vit]').forEach((x) => x.setAttribute('aria-pressed', String(x === b))); });
   sh.back.querySelector('#pgo').onclick = async () => {
     const etat = (t) => { sh.back.querySelector('#petat').textContent = t; };
     const btn = sh.back.querySelector('#pgo'); btn.disabled = true;
     try {
-      etat('Chargement du moteur…');
-      const { TtsSession } = await import('../vendor/piper/piper-tts-web.js');
-      const base = new URL('../vendor/piper/', import.meta.url).href;
+      etat('Préparation…');
+      const V = await import('./voix.js');
+      const v = V.VOIX.find((x) => x.id === pvoix);
       const t0 = performance.now();
-      const session = await TtsSession.create({
-        voiceId: pvoix,
-        progress: (p) => { if (p.total) etat(`Téléchargement de la voix : ${Math.round((p.loaded * 100) / p.total)} %`); },
-        wasmPaths: { onnxWasm: base + 'ort/', piperData: base + 'phonemize/piper_phonemize.data', piperWasm: base + 'phonemize/piper_phonemize.wasm' }
-      });
-      const t1 = performance.now(); etat('Génération de l’audio…');
-      const texte = sh.back.querySelector('#ptxt').value.trim() || 'Bonjour.';
-      const wav = await Promise.race([session.predict(texte), new Promise((_, rej) => setTimeout(() => rej(new Error('trop long (plus de 2 minutes)')), 120000))]);
-      const t2 = performance.now();
+      const r = await V.synthese(v, sh.back.querySelector('#ptxt').value.trim() || 'Bonjour.', { locuteur: v.multi ? pnum : null, vitesse: pvit, progression: (x) => etat(`Téléchargement de la voix : ${Math.round(x * 100)} %`) });
+      const t1 = performance.now();
+      if (v.multi) nbLoc = r.nbLocuteurs;
       try { if (navigator.audioSession) navigator.audioSession.type = 'playback'; } catch {}
-      audio?.pause(); audio = new Audio(URL.createObjectURL(wav));
+      audio?.pause(); audio = new Audio(URL.createObjectURL(r.blob));
       audio.onended = () => { try { if (navigator.audioSession) navigator.audioSession.type = 'ambient'; } catch {} };
       await audio.play();
-      const duree = audio.duration && isFinite(audio.duration) ? audio.duration : null;
-      etat(`Voix prête en ${((t1 - t0) / 1000).toFixed(1)} s · audio généré en ${((t2 - t1) / 1000).toFixed(1)} s${duree ? ` pour ${duree.toFixed(1)} s de parole` : ''}.`);
+      etat(`${v.nom}${v.multi ? ` n° ${pnum}` : ''} : ${r.secondes.toFixed(1)} s de parole, prêtes en ${((t1 - t0) / 1000).toFixed(1)} s.`);
+      dessinerVoix();
     } catch (e) { etat('Erreur : ' + (e?.message || e)); console.error(e); }
     btn.disabled = false;
   };
