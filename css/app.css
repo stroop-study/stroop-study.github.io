@@ -451,3 +451,7 @@ body.nuit::after{content:"";position:fixed;inset:0;background:rgba(255,150,40,.1
 body.nuit #halos{opacity:.35}
 .pill:not([class*="c-"])[aria-pressed="true"]{border-color:var(--ink);background:var(--ink);color:var(--bg)}
 .seg.rseg button[aria-pressed="true"]{background:var(--ink);color:var(--bg)}
+.criteres{background:var(--card);border:2px solid var(--m-bg,var(--line));border-radius:18px;padding:12px 14px;display:flex;flex-direction:column;gap:6px}
+.criteres ul{margin:0;padding-left:18px;display:flex;flex-direction:column;gap:6px;font-size:14px;line-height:1.45;font-weight:500}
+.criteres b{font-weight:800;color:var(--m-ink,var(--ink))}
+.criteres li.sub{list-style:none;margin-left:-4px;padding-left:10px;border-left:3px solid var(--m-bg,var(--line))}

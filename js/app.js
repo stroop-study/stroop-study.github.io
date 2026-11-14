@@ -11,7 +11,7 @@ import * as S from './store.js';
 import { today, isDue, dueDate, nextState, mastery, notionStats, seenCount, prioritize, shuffle, streak, INTERVALS } from './leitner.js';
 import { TYPES, TYPE_KEYS, NIVEAUX, typeLabel, timeFor, formatOf, checkCourte, sameSet, resolveVariants, nbVariantes, normalize } from './types.js';
 
-const VERSION = '2.10.2';
+const VERSION = '2.10.3';
 const $app = document.getElementById('app');
 const $tab = document.getElementById('tabbar');
 const $halos = document.getElementById('halos');
@@ -866,7 +866,9 @@ async function entreeSheet(c, { titre, sousTitre, corps, extra = '', ids, mots, 
 }
 function termeSheet(c, g) {
   const ids = R.questionsDuTerme(c, g);
+  const gras = (t) => esc(t).replace(/\*\*(.+?)\*\*/g, '<b>$1</b>');
   const extra = `${g.aussi?.length ? `<div class="small muted">Aussi : ${esc(g.aussi.join(', '))}</div>` : ''}
+    ${g.criteres?.length ? `<div class="criteres"><div class="between"><b>Critères DSM-5</b><span class="small muted">en gras : l’essentiel du cours</span></div><ul>${g.criteres.map((c) => (c.includes(' · ') ? c.split(' · ').map((x) => `<li class="sub">${gras(x)}</li>`).join('') : `<li>${gras(c)}</li>`)).join('')}</ul></div>` : ''}
     ${g.exemple ? `<div class="reflechir" style="gap:4px"><b class="small">Exemple</b><span class="small">${esc(g.exemple)}</span></div>` : ''}
     ${g.voir?.length ? `<div class="field">Voir aussi<div class="pills">${g.voir.map((v) => `<button class="pill" data-voir="${esc(v)}">${esc(v)}</button>`).join('')}</div></div>` : ''}`;
   entreeSheet(c, { titre: g.terme, sousTitre: g.auteur || '', corps: g.def, extra, ids, mots: [g.terme, ...(g.aussi || [])], notion: g.terme });

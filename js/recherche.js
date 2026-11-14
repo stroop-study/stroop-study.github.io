@@ -38,7 +38,7 @@ export function construireIndex(contenus) {
   for (const c of contenus) {
     const code = c.code;
     (c.glossaire || []).forEach((g, i) => docs.push({ k: 'terme', code, id: `${code}:t${i}`, g, titre: g.terme, poids: 4,
-      tete: mots([g.terme, ...(g.aussi || [])].join(' ')), corps: mots(`${g.def} ${(g.voir || []).join(' ')}`) }));
+      tete: mots([g.terme, ...(g.aussi || [])].join(' ')), corps: mots(`${g.def} ${(g.voir || []).join(' ')} ${(g.criteres || []).join(' ').replace(/\*\*/g, '')}`) }));
     (c.auteurs || []).forEach((a, i) => docs.push({ k: 'auteur', code, id: `${code}:a${i}`, a, titre: a.nom, poids: 4,
       tete: mots(a.nom), corps: mots(`${a.reperes || ''} ${a.apport}`) }));
     for (const ch of c.chapitres) {

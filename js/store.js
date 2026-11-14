@@ -263,7 +263,7 @@ export function validateContenu(data) {
       checkElement(e);
     }
   }
-  for (const g of data.glossaire || []) if (!g.terme || !g.def) throw new Error(`Entrée de glossaire incomplète : ${g.terme || '?'}`);
+  for (const g of data.glossaire || []) if (!g.terme || !g.def || (g.criteres && !(Array.isArray(g.criteres) && g.criteres.every((c) => typeof c === 'string')))) throw new Error(`Entrée de glossaire incomplète : ${g.terme || '?'}`);
   for (const a of data.auteurs || []) if (!a.nom || !a.apport) throw new Error(`Auteur·rice incomplet : ${a.nom || '?'}`);
   return { code: data.matiere.code, nbChapitres: data.chapitres.length, nbElements: ids.size };
 }
