@@ -11,7 +11,7 @@ import * as S from './store.js';
 import { today, isDue, dueDate, nextState, mastery, notionStats, seenCount, prioritize, shuffle, streak, INTERVALS } from './leitner.js';
 import { TYPES, TYPE_KEYS, NIVEAUX, typeLabel, timeFor, formatOf, checkCourte, sameSet, resolveVariants, nbVariantes, normalize } from './types.js';
 
-const VERSION = '2.13.1';
+const VERSION = '2.13.2';
 const $app = document.getElementById('app');
 const $tab = document.getElementById('tabbar');
 const $halos = document.getElementById('halos');
@@ -954,7 +954,7 @@ function laboEcoute() {
       <div class="two"><button class="btn soft" id="lbipC">Façon C</button><button class="btn soft" id="lbipD">Façon D</button></div><div class="two"><button class="btn plain" id="lbipA">Façon A</button><button class="btn plain" id="lbipB">Façon B</button></div><span class="small" id="lbipABetat" style="font-weight:700"></span></div>
     <div class="field">4. Voix naturelles<span class="small muted" style="font-weight:600">Calculées sur ton téléphone : le texte ne quitte jamais l’appli. Chaque voix (fichier public, sans rien de toi) se télécharge une fois, en Wi-Fi de préférence.</span>
       <div class="pills" id="pvx"></div>
-      <div class="row" id="pmls" style="gap:8px;display:none"><button class="btn plain sm" id="pmoins">−</button><span class="small" style="font-weight:800;flex:1;text-align:center" id="pnum">Voix n° 0</span><button class="btn plain sm" id="pplus">+</button><button class="btn plain sm" id="phasard">Au hasard</button></div>
+      <div id="pmls" class="reflechir" style="display:none;gap:6px"><b class="small">125 voix différentes (femmes et hommes) : change de numéro, puis écoute</b><div class="row" style="gap:8px"><button class="btn plain sm" id="pmoins">−</button><span class="small" style="font-weight:800;flex:1;text-align:center" id="pnum">Voix n° 0</span><button class="btn plain sm" id="pplus">+</button><button class="btn plain sm" id="phasard">Au hasard</button></div></div>
       <div class="seg" id="pvit"><button data-vit="1" aria-pressed="true">Vitesse normale</button><button data-vit="0.85" aria-pressed="false">Plus lente</button></div>
       <label class="field"><span class="sr">Texte à lire</span><textarea id="ptxt" rows="3">Bonjour ! Je suis une voix de synthèse qui fonctionne directement sur ton téléphone. Est-ce que je te parais naturelle ?</textarea></label>
       <button class="btn soft" id="pgo">${ic('play')}Écouter cette voix</button><span class="small" id="petat" style="font-weight:700"></span></div>
@@ -1006,6 +1006,7 @@ function laboEcoute() {
     box.innerHTML = (await Promise.all(V.VOIX.map(async (v) => `<button class="pill" data-pv="${v.id}" aria-pressed="${v.id === pvoix}">${v.genre === 'm' ? '♂' : v.genre === 'f' ? '♀' : '♂♀'} ${esc(v.nom)} <span class="muted">${(await V.estTelechargee(v)) ? '✓' : v.mo + ' Mo'}</span></button>`))).join('');
     box.querySelectorAll('[data-pv]').forEach((b) => b.onclick = () => { pvoix = b.dataset.pv; dessinerVoix(); });
     sh.back.querySelector('#pmls').style.display = pvoix === 'mls' ? 'flex' : 'none';
+    sh.back.querySelector('#pgo').innerHTML = `${ic('play')}Écouter ${pvoix === 'mls' ? `la voix MLS n° ${pnum}` : 'cette voix'}`;
     sh.back.querySelector('#pnum').textContent = `Voix n° ${pnum} sur ${nbLoc}`;
   };
   dessinerVoix();

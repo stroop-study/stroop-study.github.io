@@ -56,11 +56,23 @@ async function phonemes(texte, voixEspeak) {
   return new Promise((ok, ko) => {
     const t = setTimeout(() => ko(new Error('phonémisation trop longue')), 20000);
     createPiperPhonemize({
-      print: (d) => { clearTimeout(t); try { ok(JSON.parse(d).phoneme_ids); } catch (e) { ko(e); } },
+      print: (d) => { clearTimeout(t); try { ok(JSON.parse(d)); } catch (e) { ko(e); } },
       printErr: () => {},
       locateFile: (u) => (u.endsWith('.wasm') ? BASE + 'phonemize/piper_phonemize.wasm' : u.endsWith('.data') ? BASE + 'phonemize/piper_phonemize.data' : u)
     }).then((m) => m.callMain(['-l', voixEspeak, '--input', JSON.stringify([{ text: texte }]), '--espeak_data', '/espeak-ng-data'])).catch(ko);
   });
+}
+
+/** Numéros de phonèmes selon la table du modèle lui-même (certains modèles, comme Gilles, ont une table plus courte). */
+function idsPour(ph, config) {
+  const map = config.phoneme_id_map;
+  if (!map || !ph.phonemes) return ph.phoneme_ids;
+  const id = (c) => map[c] ?? (c.normalize('NFD') !== c ? map[c.normalize('NFD')[0]] : undefined);
+  const pad = map._ || [0];
+  const ids = [...(map['^'] || [1]), ...pad];
+  for (const c of ph.phonemes) { const x = id(c); if (x) ids.push(...x, ...pad); }
+  ids.push(...(map.$ || [2]));
+  return ids;
 }
 
 /** Découpe en phrases (Piper lit mieux des phrases courtes). */
@@ -89,7 +101,9 @@ export async function synthese(v, texte, { locuteur = null, vitesse = 1, pause =
   const morceaux = [];
   const silence = new Float32Array(Math.round(taux * pause));
   for (const p of phrases(texte)) {
-    const ids = await phonemes(p, config.espeak.voice);
+    const ph = await phonemes(p, config.espeak.voice);
+    const ids = idsPour(ph, config);
+    if (ids.length < 3) continue;
     const feeds = {
       input: new O.Tensor('int64', BigInt64Array.from(ids.map(BigInt)), [1, ids.length]),
       input_lengths: new O.Tensor('int64', BigInt64Array.from([BigInt(ids.length)]), [1]),
