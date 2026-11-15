@@ -11,7 +11,7 @@ import * as S from './store.js';
 import { today, isDue, dueDate, nextState, mastery, notionStats, seenCount, prioritize, shuffle, streak, INTERVALS } from './leitner.js';
 import { TYPES, TYPE_KEYS, NIVEAUX, typeLabel, timeFor, formatOf, checkCourte, sameSet, resolveVariants, nbVariantes, normalize } from './types.js';
 
-const VERSION = '2.14.0';
+const VERSION = '2.14.1';
 const $app = document.getElementById('app');
 const $tab = document.getElementById('tabbar');
 const $halos = document.getElementById('halos');
@@ -1966,19 +1966,24 @@ async function viewProfil(section) {
   });
   $app.querySelectorAll('[data-rm]').forEach((b) => b.onclick = async () => { await S.setMembres((S.getAcces()?.membres || []).filter((x) => x !== b.dataset.rm)); viewProfil(section); });
   const fileIn = document.getElementById('file');
-  const importFiles = async (files) => {
+  const importFiles = async (files, forcer = false) => {
     const out = document.getElementById('imp');
-    out.innerHTML = '';
+    if (!forcer) out.innerHTML = '';
     for (const file of files) {
       try {
         if (!file.name.toLowerCase().endsWith('.json')) throw new Error('Ce n\u2019est pas un fichier .json.');
         const data = JSON.parse(await file.text());
-        const info = await S.importContenu(data, file.name); son('ok');
+        const info = await S.importContenu(data, file.name, { forcer }); son('ok');
         const vers = document.getElementById('vers'); if (vers) vers.innerHTML = versionsHtml();
         out.insertAdjacentHTML('beforeend', `<div class="feedback ok"><b>${esc(info.code)}${info.revision ? ` v${info.revision}` : ''} importé !</b>${plural(info.nbChapitres, 'chapitre')}, ${plural(info.nbElements, 'élément')}${info.glossaire ? `, ${plural(info.glossaire, 'terme')} de glossaire, ${plural(info.auteurs, 'auteur·rice', 'auteur·rices')}` : ''}. <a href="#/matiere/${encodeURIComponent(info.code)}">Voir ${esc(info.code)}</a></div>`);
       } catch (er) {
         const msg = er instanceof SyntaxError ? 'Le fichier est abîmé ou incomplet.' : er.message;
-        out.insertAdjacentHTML('beforeend', `<div class="feedback ko"><b>${esc(file.name)} : import impossible</b>${esc(msg)}</div>`);
+        if (er.ancienne) {
+          const box = document.createElement('div'); box.className = 'feedback ko';
+          box.innerHTML = `<b>${esc(file.name)} : version plus ancienne</b>${esc(msg)}<button class="btn plain sm" style="margin-top:8px">Importer quand même la v${er.ancienne.revision}</button>`;
+          box.querySelector('button').onclick = () => { box.remove(); importFiles([file], true); };
+          out.appendChild(box); son('ko');
+        } else out.insertAdjacentHTML('beforeend', `<div class="feedback ko"><b>${esc(file.name)} : import impossible</b>${esc(msg)}</div>`);
       }
     }
   };

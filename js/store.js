@@ -275,10 +275,16 @@ function revisionDe(data, nomFichier) {
   return m ? Number(m[1]) : null;
 }
 
-export async function importContenu(data, nomFichier = '') {
+export async function importContenu(data, nomFichier = '', { forcer = false } = {}) {
   const info = validateContenu(data);
   const code = info.code;
   const importeLe = Date.now(), revision = revisionDe(data, nomFichier), fichier = nomFichier || null;
+  // Garde-fou : on ne remplace pas une version plus récente par une plus ancienne (sauf choix explicite).
+  const actuelle = state.contenu[code]?.revision;
+  if (!forcer && Number.isInteger(actuelle) && Number.isInteger(revision) && revision < actuelle) {
+    const e = new Error(`Tu as déjà la version ${actuelle} de ${code}, plus récente que ce fichier (v${revision}). Rien n’a été remplacé.`);
+    e.ancienne = { code, actuelle, revision }; throw e;
+  }
   const glossaire = Array.isArray(data.glossaire) ? data.glossaire : [], auteurs = Array.isArray(data.auteurs) ? data.auteurs : [];
   await setDoc(contenuRef(code), { matiere: data.matiere, chapitresJson: JSON.stringify(data.chapitres), glossaireJson: JSON.stringify(glossaire), auteursJson: JSON.stringify(auteurs), version: data.version || 1, importeLe, revision, fichier });
   state.contenu[code] = { matiere: data.matiere, chapitres: data.chapitres, glossaire, auteurs, importeLe, revision, fichier };
