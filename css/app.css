@@ -492,3 +492,18 @@ body.nuit #halos{opacity:.35}
 .pile{display:flex;height:16px;border-radius:999px;overflow:hidden;gap:2px}
 .nrow{display:flex;align-items:center;gap:8px}
 .nrow .chip{flex:none}
+
+/* Progrès : détail d'un jour au toucher (comme l'app Santé) */
+.stroop.prog{width:88px;height:88px}
+.ry-graphe{touch-action:pan-y;-webkit-user-select:none;user-select:none;cursor:pointer;-webkit-tap-highlight-color:transparent}
+.ry-graphe .ry-b rect{transition:opacity .12s}
+.ry-graphe .ry-sel .ry-b:not(.on) rect{opacity:.32}
+.ry-guide{fill:var(--ghost);opacity:0;transition:x .08s}
+.ry-sel .ry-guide{opacity:.55}
+.ry-info{display:flex;flex-direction:column;gap:1px;min-height:62px;padding:8px 12px;border-radius:14px;background:var(--bg2,rgba(0,0,0,.035));transition:background .15s}
+.ry-info.on{background:var(--ghost)}
+.ry-info .ry-k{font-size:12px;font-weight:700;color:var(--muted)}
+.ry-info .ry-v{font-size:15px}
+.ry-info .ry-v b{font-family:'Outfit',sans-serif;font-size:22px;font-weight:700;margin-right:2px}
+.ry-info .ry-s{font-size:12px;color:var(--muted);display:flex;flex-wrap:wrap;gap:4px 10px}
+.ry-m{display:inline-flex;align-items:center;gap:4px}

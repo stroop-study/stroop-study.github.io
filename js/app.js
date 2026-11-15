@@ -11,7 +11,7 @@ import * as S from './store.js';
 import { today, isDue, dueDate, nextState, mastery, notionStats, seenCount, prioritize, shuffle, streak, INTERVALS } from './leitner.js';
 import { TYPES, TYPE_KEYS, NIVEAUX, typeLabel, timeFor, formatOf, checkCourte, sameSet, resolveVariants, nbVariantes, normalize } from './types.js';
 
-const VERSION = '2.13.0';
+const VERSION = '2.13.1';
 const $app = document.getElementById('app');
 const $tab = document.getElementById('tabbar');
 const $halos = document.getElementById('halos');
@@ -1565,13 +1565,13 @@ async function viewProgres() {
       const v = val(k), h = v ? Math.max(3, (v / max) * (H - 18)) : 0;
       const jm = u.joursM?.[k]; const top = jm ? Object.entries(jm).sort((a, b) => b[1] - a[1])[0][0] : null;
       const col = top && couleurOf[top] ? `var(--${couleurOf[top]}-acc)` : 'var(--muted)';
-      return `<rect x="${i * bw + 1.5}" y="${H - h}" width="${bw - 3}" height="${h}" rx="3" fill="${v ? col : 'var(--ghost)'}"><title>${esc(fmtD(k))} : ${mode === 'rep' ? plural(v, 'réponse') : fmtMin(v)}${top ? ', surtout ' + top : ''}</title></rect>${v ? '' : `<rect x="${i * bw + 1.5}" y="${H - 3}" width="${bw - 3}" height="3" rx="1.5" fill="var(--ghost)"/>`}`;
+      return `<g class="ry-b" data-i="${i}"><rect x="${i * bw + 1.5}" y="${H - h}" width="${bw - 3}" height="${h}" rx="3" fill="${v ? col : 'var(--ghost)'}"/>${v ? '' : `<rect x="${i * bw + 1.5}" y="${H - 3}" width="${bw - 3}" height="3" rx="1.5" fill="var(--ghost)"/>`}</g>`;
     }).join('');
     const etiq = [0, 10, 20, 29].map((i) => `<text x="${i === 29 ? W : i === 0 ? 0 : i * bw + bw / 2}" y="${H + 13}" text-anchor="${i === 29 ? 'end' : i === 0 ? 'start' : 'middle'}" font-size="9" fill="var(--muted)">${new Date(j30[i]).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })}</text>`).join('');
-    return `<svg viewBox="0 0 ${W} ${H + 16}" width="100%" role="img" aria-label="${mode === 'rep' ? 'Réponses' : 'Temps de révision'} des 30 derniers jours"><text x="0" y="9" font-size="9" fill="var(--muted)">max ${mode === 'rep' ? max : fmtMin(max)}</text>${barres}${etiq}</svg>`;
+    return `<svg viewBox="0 0 ${W} ${H + 16}" width="100%" role="img" aria-label="${mode === 'rep' ? 'Réponses' : 'Temps de révision'} des 30 derniers jours. Touche une barre pour voir le détail du jour."><text x="0" y="9" font-size="9" fill="var(--muted)">max ${mode === 'rep' ? max : fmtMin(max)}</text><rect class="ry-guide" x="0" y="0" width="${bw}" height="${H}" rx="4"/>${barres}${etiq}</svg>`;
   };
 
-  $app.innerHTML = `<div class="between"><h1>Progrès</h1>${stroopImg(joursArc ? 'arcenciel' : 'etude', 'small').replace('width="176" height="176"', 'width="88" height="88" style="width:88px;height:88px"')}</div>
+  $app.innerHTML = `<div class="between"><h1>Progrès</h1>${stroopImg(joursArc ? 'arcenciel' : 'etude', 'prog')}</div>
     <div class="stats">
       <button class="stat" data-stat><b>${totalMin ? fmtMin(totalMin) : '0 min'}</b><span>de révision</span></button>
       <button class="stat" data-stat><b>${bonnes}</b><span>${bonnes > 1 ? 'bonnes réponses' : 'bonne réponse'}</span></button>
@@ -1581,7 +1581,8 @@ async function viewProgres() {
     <h2 class="section-title">Ton rythme</h2>
     <div class="card" style="padding:14px;display:flex;flex-direction:column;gap:10px">
       <div class="between"><b style="white-space:nowrap">30 jours</b><div class="seg rseg" style="width:auto"><button data-mode="rep" aria-pressed="true" style="padding:0 12px">Réponses</button><button data-mode="min" aria-pressed="false" style="padding:0 12px">Temps</button></div></div>
-      <div id="graphe">${graphe()}</div>
+      <div class="ry-info" id="ryInfo" aria-live="polite"></div>
+      <div id="graphe" class="ry-graphe">${graphe()}</div>
       ${avec.length ? `<div class="nlegend small">${avec.map((x) => `<span><span class="ndot" style="background:var(--${x.m.couleur}-acc)"></span>${esc(x.m.code)}</span>`).join('')}</div>` : ''}
     </div>
     <div class="card" style="padding:14px;display:flex;flex-direction:column;gap:8px">
@@ -1616,7 +1617,43 @@ async function viewProgres() {
         <span class="small muted">Vu : ${x.vus}/${x.total} · ${x.due} à revoir · ${plural(x.erreurs, 'erreur')} en attente</span>
       </a>`).join('') || '<div class="card empty muted">Rien pour l’instant : importe du contenu pour commencer.</div>'}</div>`;
 
-  $app.querySelectorAll('[data-mode]').forEach((b) => b.onclick = () => { mode = b.dataset.mode; $app.querySelectorAll('[data-mode]').forEach((x) => x.setAttribute('aria-pressed', String(x === b))); document.getElementById('graphe').innerHTML = graphe(); });
+  // Détail d'un jour, comme l'app Santé : toucher une barre, puis glisser le doigt pour passer d'un jour à l'autre.
+  let sel = null;
+  const gEl = document.getElementById('graphe'), info = document.getElementById('ryInfo');
+  const minDe = (k) => (temps[k] || 0) / 60;
+  const tps = (k) => { const m = minDe(k); return !m ? '0 min' : m < 1 ? 'moins d’1 min' : fmtMin(m); };
+  const infoDefaut = () => {
+    const actifs = j30.filter((k) => u.jours[k] || temps[k]);
+    const totM = somme(j30, minDe), totR = somme(j30, (k) => u.jours[k] || 0);
+    return `<span class="ry-k">Sur 30 jours</span><span class="ry-v"><b>${fmtMin(totM)}</b> · ${plural(totR, 'réponse')}</span><span class="ry-s">${actifs.length ? `en moyenne ${fmtMin(totM / actifs.length)} les jours où tu révises` : 'Touche une barre pour voir le détail d’un jour'}</span>`;
+  };
+  const infoJour = (k) => {
+    const jm = u.joursM?.[k] || {};
+    const mats = Object.entries(jm).filter(([, n]) => n > 0).sort((a, b) => b[1] - a[1]);
+    const d = new Date(k).toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' });
+    return `<span class="ry-k">${esc(k === today() ? 'Aujourd’hui' : d.charAt(0).toUpperCase() + d.slice(1))}</span><span class="ry-v"><b>${tps(k)}</b> · ${plural(u.jours[k] || 0, 'réponse')}</span><span class="ry-s">${mats.length ? mats.map(([c, n]) => `<span class="ry-m"><span class="ndot" style="background:var(--${couleurOf[c] || 'muted'}-acc)"></span>${esc(c)} · ${n}</span>`).join('') : 'Pas de révision ce jour-là'}</span>`;
+  };
+  const montrer = () => {
+    info.innerHTML = sel === null ? infoDefaut() : infoJour(j30[sel]);
+    info.classList.toggle('on', sel !== null);
+    const svg = gEl.querySelector('svg'); if (!svg) return;
+    svg.classList.toggle('ry-sel', sel !== null);
+    svg.querySelectorAll('.ry-b').forEach((g) => g.classList.toggle('on', Number(g.dataset.i) === sel));
+    const gd = svg.querySelector('.ry-guide'); if (gd && sel !== null) gd.setAttribute('x', String(sel * (300 / 30)));
+  };
+  const indexAt = (x) => { const r = gEl.querySelector('svg').getBoundingClientRect(); return Math.min(29, Math.max(0, Math.floor(((x - r.left) / r.width) * 30))); };
+  const choisir = (i) => { if (i === sel) return; sel = i; montrer(); navigator.vibrate?.(6); };
+  let appui = false, depart = null;
+  gEl.addEventListener('pointerdown', (e) => { appui = true; depart = sel; gEl.setPointerCapture?.(e.pointerId); choisir(indexAt(e.clientX)); });
+  gEl.addEventListener('pointermove', (e) => { if (appui) choisir(indexAt(e.clientX)); });
+  const fin = (e) => { if (!appui) return; appui = false; if (e.type === 'pointerup' && depart === sel && depart !== null && !gEl._bouge) { sel = null; montrer(); } gEl._bouge = false; };
+  gEl.addEventListener('pointermove', () => { if (appui) gEl._bouge = true; });
+  gEl.addEventListener('pointerup', fin); gEl.addEventListener('pointercancel', fin);
+  document.removeEventListener('pointerdown', window._ryOut);
+  window._ryOut = (e) => { if (sel !== null && gEl.isConnected && !gEl.contains(e.target) && !e.target.closest('[data-mode]')) { sel = null; montrer(); } };
+  document.addEventListener('pointerdown', window._ryOut);
+  montrer();
+  $app.querySelectorAll('[data-mode]').forEach((b) => b.onclick = () => { mode = b.dataset.mode; $app.querySelectorAll('[data-mode]').forEach((x) => x.setAttribute('aria-pressed', String(x === b))); gEl.innerHTML = graphe(); montrer(); });
   $app.querySelectorAll('[data-faible]').forEach((b) => b.onclick = () => { const n = faibles[Number(b.dataset.faible)]; startSession({ code: n.code, kind: 'notion', ids: n.ids, titre: n.nom }); });
   $app.querySelectorAll('[data-stat]').forEach((b) => b.onclick = () => openSheet(`
     <div class="between"><h2>Tes chiffres</h2><button class="icon-btn" data-close aria-label="Fermer">${ic('close')}</button></div>
