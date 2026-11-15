@@ -11,7 +11,7 @@ import * as S from './store.js';
 import { today, isDue, dueDate, nextState, mastery, notionStats, seenCount, prioritize, shuffle, streak, INTERVALS } from './leitner.js';
 import { TYPES, TYPE_KEYS, NIVEAUX, typeLabel, timeFor, formatOf, checkCourte, sameSet, resolveVariants, nbVariantes, normalize } from './types.js';
 
-const VERSION = '2.13.3';
+const VERSION = '2.14.0';
 const $app = document.getElementById('app');
 const $tab = document.getElementById('tabbar');
 const $halos = document.getElementById('halos');
@@ -46,6 +46,9 @@ const IC = {
   paw: '<g fill="currentColor" stroke="none"><ellipse cx="12" cy="15.6" rx="4.6" ry="3.9"/><ellipse cx="6.2" cy="10.4" rx="1.9" ry="2.4"/><ellipse cx="9.6" cy="6.8" rx="1.9" ry="2.5"/><ellipse cx="14.4" cy="6.8" rx="1.9" ry="2.5"/><ellipse cx="17.8" cy="10.4" rx="1.9" ry="2.4"/></g>',
   help: '<path d="M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM9.5 9.5a2.5 2.5 0 1 1 3.5 2.3c-.6.3-1 .9-1 1.6v.6M12 17h.01"/>',
   play: '<path d="M8 5l11 7-11 7z"/>',
+  prev: '<path d="M18 6l-8 6 8 6zM6 6v12"/>',
+  suiv: '<path d="M6 6l8 6-8 6zM18 6v12"/>',
+  casque: '<path d="M4 15v-3a8 8 0 0 1 16 0v3"/><rect x="3" y="14" width="4" height="6" rx="1.5"/><rect x="17" y="14" width="4" height="6" rx="1.5"/>',
   cards: '<path d="M8 4h11v14H8zM5 7v13h11"/>',
   search: '<path d="M10.5 18a7.5 7.5 0 1 0 0-15 7.5 7.5 0 0 0 0 15zM16 16l5 5"/>',
   moon: '<path d="M20 14.5A8 8 0 0 1 9.5 4 8 8 0 1 0 20 14.5z"/>'
@@ -155,6 +158,7 @@ async function route() {
     if (page === 'matieres') return await viewMatieres();
     if (page === 'recherche') return viewRecherche(arg ? decodeURIComponent(arg) : null);
     if (page === 'session') return viewSession();
+    if (page === 'ecoute') return viewEcoute();
     if (page === 'recap') return viewRecap();
     if (page === 'progres') return await viewProgres();
     if (page === 'profil') return await viewProfil(arg);
@@ -568,6 +572,7 @@ async function viewMatiere(code) {
           <button class="btn soft" id="flash" style="white-space:nowrap" ${flashItems.length ? '' : 'disabled'}>${ic('cards')}Flashcards${flashItems.length ? ` <span class="nb">${flashDue || flashItems.length}</span>` : ''}</button>
         </div>
         <button class="btn plain block" id="err" ${errItems.length ? '' : 'disabled'}>${ic('redo')}Mes erreurs · ${errItems.length}</button>
+        <button class="btn plain block" id="ecoute">${ic('casque')}Écouter ${st.sel.size ? (st.sel.size > 1 ? 'ces chapitres' : 'ce chapitre') : 'la matière'}</button>
       </div>
     </div>`;
     $app.querySelectorAll('[data-chap]').forEach((b) => b.onclick = () => { const id = b.dataset.chap; st.sel.has(id) ? st.sel.delete(id) : st.sel.add(id); render(); });
@@ -584,9 +589,155 @@ async function viewMatiere(code) {
     document.getElementById('err').onclick = () => startSession({ ...opts, kind: 'erreurs' });
     document.getElementById('flash').onclick = () => startSession({ ...opts, chapitres: st.sel.size ? opts.chapitres : null, kind: 'flash' });
     document.getElementById('gear').onclick = () => matiereSheet(m, render);
+    document.getElementById('ecoute').onclick = () => ecouteSheet(m, x, chaps.filter((c) => !st.sel.size || st.sel.has(c.id)));
   };
   render();
   if (!localStorage.getItem('stroop-tuto-leitner')) { localStorage.setItem('stroop-tuto-leitner', '1'); leitnerTuto(m); }
+}
+
+/* ================= Mode écoute ================= */
+let ecouteEtat = null;
+const ECFG = 'stroop-ecoute-cfg';
+async function ecouteSheet(m, x, chaps) {
+  const E = await import('./ecoute.js'), V = await import('./voix.js');
+  const cfg = { contenu: 'tout', n: 10, voix: 'pierre', silence: 8, vitesse: 1, ...JSON.parse(localStorage.getItem(ECFG) || '{}') };
+  const derniere = await E.retrouver(m.code);
+  const voix = V.VOIX.filter((v) => v.id === 'pierre' || v.id === 'jessica');
+  const seg = (k, opts) => `<div class="seg" data-k="${k}">${opts.map(([v, l]) => `<button data-v="${v}" aria-pressed="${String(cfg[k]) === String(v)}">${l}</button>`).join('')}</div>`;
+  const nbQ = () => x.items.filter((it) => chaps.some((c) => c.id === it.chapitre) && E.audible(it)).length;
+  const sh = openSheet(`
+    <div class="between"><h2>Écouter</h2><button class="icon-btn" data-close aria-label="Fermer">${ic('close')}</button></div>
+    <p class="small muted" style="margin:0">${chaps.length === x.contenu.chapitres.length ? 'Toute la matière' : chaps.map((c) => esc(shortChap(c.titre))).join(' · ')}. La voix est calculée sur ton téléphone : ton cours ne quitte jamais l’appli. Spotify se met en pause pendant l’écoute.</p>
+    ${derniere ? `<button class="card cfg-card" id="reprendre"><span><b>Reprendre ma dernière écoute</b><span class="small muted" style="display:block">${esc(derniere.titre || '')} · ${fmtMin(derniere.duree / 60)}${derniere.pos > 10 ? ` · reprise à ${Math.floor(derniere.pos / 60)} min ${String(Math.floor(derniere.pos % 60)).padStart(2, '0')}` : ''}</span></span>${ic('play')}</button>` : ''}
+    <div class="field">Contenu${seg('contenu', [['fiches', 'Fiches'], ['questions', 'Questions'], ['tout', 'Les deux']])}</div>
+    <div class="field" id="fN">Nombre de questions${seg('n', [[10, '10'], [20, '20'], [0, `Toutes (${nbQ()})`]])}</div>
+    <div class="field" id="fS">Silence pour répondre${seg('silence', [[5, '5 s'], [8, '8 s'], [12, '12 s']])}</div>
+    <div class="field">Voix${seg('voix', voix.map((v) => [v.id, v.nom]))}</div>
+    <div class="field">Vitesse${seg('vitesse', [[1, 'Normale'], [0.85, 'Plus lente']])}</div>
+    <span class="small muted" id="ecest"></span>
+    <button class="btn primary block" id="ecgo">${ic('casque')}Préparer l’écoute</button>`, `c-${m.couleur}`);
+  const choisir = () => {
+    let qs = x.items.filter((it) => chaps.some((c) => c.id === it.chapitre) && E.audible(it));
+    qs = shuffle(qs); if (cfg.n) qs = qs.slice(0, cfg.n);
+    const ordre = new Map(x.items.map((it, i) => [it.id, i])); qs.sort((a, b) => ordre.get(a.id) - ordre.get(b.id));
+    return E.programme({ chapitres: chaps, items: qs, contenu: cfg.contenu, silence: cfg.silence });
+  };
+  const estimer = () => {
+    const P = choisir();
+    const sec = P.reduce((a, p) => a + (p.type === 'parole' ? p.texte.length / (13.5 * cfg.vitesse) : p.type === 'silence' ? p.secondes : 0.2), 0);
+    const min = Math.max(1, Math.round(sec / 60)), prep = Math.max(1, Math.round(sec / 60 / 4));
+    sh.back.querySelector('#ecest').innerHTML = `Environ <b>${fmtMin(min)}</b> d’écoute, préparée en ${prep > 1 ? 'environ ' + prep + ' min' : 'moins d’une minute'} sur ton téléphone. Garde l’écran allumé pendant la préparation ; ensuite tu peux le verrouiller.${min > 45 ? ' C’est long : choisis moins de chapitres si ton téléphone peine.' : ''}`;
+  };
+  const maj = () => {
+    estimer();
+    sh.back.querySelectorAll('[data-k]').forEach((g) => g.querySelectorAll('[data-v]').forEach((b) => b.setAttribute('aria-pressed', String(String(cfg[g.dataset.k]) === b.dataset.v))));
+    sh.back.querySelector('#fN').style.display = sh.back.querySelector('#fS').style.display = cfg.contenu === 'fiches' ? 'none' : '';
+  };
+  sh.back.querySelectorAll('[data-k] [data-v]').forEach((b) => b.onclick = () => { const k = b.closest('[data-k]').dataset.k, v = b.dataset.v; cfg[k] = k === 'contenu' || k === 'voix' ? v : Number(v); localStorage.setItem(ECFG, JSON.stringify(cfg)); maj(); });
+  maj();
+  sh.back.querySelector('#reprendre')?.addEventListener('click', () => { sh.close(); ecouteEtat = { m, ep: derniere, pos: derniere.pos || 0 }; go('#/ecoute'); });
+  sh.back.querySelector('#ecgo').onclick = () => {
+    const P = choisir();
+    const titre = `${m.code} · ${chaps.length === 1 ? shortChap(chaps[0].titre) : plural(chaps.length, 'chapitre')} · ${{ fiches: 'fiches', questions: 'questions', tout: 'fiches et questions' }[cfg.contenu]}`;
+    sh.close(); ecouteEtat = { m, P, voix: V.VOIX.find((v) => v.id === cfg.voix), vitesse: cfg.vitesse, titre }; go('#/ecoute');
+  };
+}
+
+async function viewEcoute() {
+  const etat = ecouteEtat;
+  if (!etat) return go('#/matieres');
+  const { m } = etat; const E = await import('./ecoute.js');
+  tabbar(null); setHalo(m.couleur);
+  if (!etat.ep) {
+    let stop = false, verrou = null;
+    $app.innerHTML = `<div class="c-${m.couleur} ec-prep"><div class="between"><span class="chip m c-${m.couleur}">${esc(m.code)}</span><button class="icon-btn" id="ecx" aria-label="Annuler">${ic('close')}</button></div>
+      ${stroopImg('etude')}<h2 style="text-align:center;margin:0">Je prépare ton écoute…</h2><p class="small muted" style="text-align:center;margin:0">${esc(etat.titre)}</p>
+      <div class="bar ec-bar"><span id="ecpb" style="width:0%"></span></div><p class="small" id="ecpt" style="text-align:center;font-weight:700;margin:0">0 %</p>
+      <p class="small muted" style="text-align:center;margin:0">Garde l’écran allumé pendant la préparation.</p></div>`;
+    document.getElementById('ecx').onclick = () => { stop = true; ecouteEtat = null; go(`#/matiere/${encodeURIComponent(m.code)}`); };
+    window.addEventListener('hashchange', function f() { window.removeEventListener('hashchange', f); if (!location.hash.startsWith('#/ecoute')) stop = true; });
+    try { verrou = await navigator.wakeLock?.request('screen'); } catch {}
+    try {
+      const t0 = Date.now();
+      const ep = await E.construire(etat.P, etat.voix, { vitesse: etat.vitesse, annule: () => stop || ecouteEtat !== etat, progression: (p, txt) => {
+        const b = document.getElementById('ecpb'), t = document.getElementById('ecpt'); if (!b) return;
+        b.style.width = `${Math.round(p * 100)}%`;
+        const reste = p > 0.05 ? Math.round(((Date.now() - t0) / p) * (1 - p) / 1000) : null;
+        t.textContent = txt || `${Math.round(p * 100)} %${reste != null ? ` · encore ${reste < 60 ? reste + ' s' : Math.round(reste / 60) + ' min'}` : ''}`;
+      } });
+      ep.titre = etat.titre; etat.ep = ep; etat.pos = 0;
+      E.garder(m.code, ep);
+    } catch (e) {
+      if (stop || ecouteEtat !== etat) return;
+      $app.innerHTML = `<div class="card empty"><p><b>La préparation a échoué.</b></p><p class="small muted">${/fetch|téléchargement/i.test(e.message) ? 'Impossible de télécharger la voix : vérifie ta connexion (le Wi-Fi est préférable la première fois).' : esc(e.message)}</p><a class="btn plain" href="#/matiere/${encodeURIComponent(m.code)}">Revenir</a></div>`;
+      return;
+    } finally { try { await verrou?.release(); } catch {} }
+    if (ecouteEtat !== etat || !location.hash.startsWith('#/ecoute')) return;
+  }
+  lecteurEcoute(etat, E);
+}
+
+function lecteurEcoute(etat, E) {
+  const { m, ep } = etat; const marques = ep.marques;
+  const url = URL.createObjectURL(ep.blob);
+  const audio = new Audio(url); audio.preload = 'auto';
+  const mmss = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
+  $app.innerHTML = `<div class="c-${m.couleur} ec-lect">
+    <div class="between"><span class="chip m c-${m.couleur}">${ic('casque')} ${esc(m.code)}</span><button class="icon-btn" id="ecx" aria-label="Fermer l’écoute">${ic('close')}</button></div>
+    <p class="small muted" style="margin:0">${esc(ep.titre || '')}</p>
+    <div class="card ec-now"><span class="ec-sous" id="ecsous"></span><div class="ec-txt" id="ectxt"></div></div>
+    <input type="range" id="ecpos" min="0" max="${Math.round(ep.duree)}" step="1" value="0" aria-label="Position dans l’écoute">
+    <div class="between small muted"><span id="ecnow">0:00</span><span>${mmss(ep.duree)}</span></div>
+    <div class="ec-ctrl">
+      <button class="icon-btn" id="ecprev" aria-label="Précédent">${ic('prev')}</button>
+      <button class="icon-btn ec-10" id="ecm10" aria-label="Reculer de 10 secondes">−10</button>
+      <button class="ec-play" id="ecplay" aria-label="Lecture">${ic('play')}</button>
+      <button class="icon-btn ec-10" id="ecp10" aria-label="Avancer de 10 secondes">+10</button>
+      <button class="icon-btn" id="ecnext" aria-label="Suivant">${ic('suiv')}</button>
+    </div>
+    <p class="small muted" style="text-align:center;margin:0">Tu peux verrouiller ton téléphone : la lecture continue, avec les commandes sur l’écran verrouillé.</p></div>`;
+  const $ = (id) => document.getElementById(id);
+  let cour = -1, dernierSave = 0;
+  const idx = (t) => { let i = 0; for (let k = 0; k < marques.length; k++) if (marques[k].t <= t + 0.05) i = k; return i; };
+  const montrer = (i) => {
+    if (i === cour) return; cour = i; const mk = marques[i] || {};
+    $('ecsous').textContent = mk.sous || ''; $('ectxt').innerHTML = esc(mk.texte || '').replace(/\n/g, '<br>');
+    $('ectxt').classList.toggle('rep', !!mk.reponse);
+    if ('mediaSession' in navigator) navigator.mediaSession.metadata = new MediaMetadata({ title: mk.sous || ep.titre, artist: `Stroop Study · ${m.code}`, album: mk.titre || '', artwork: [{ src: 'assets/icons/icon-512.png', sizes: '512x512', type: 'image/png' }] });
+  };
+  let vivant = true;
+  const etatPlay = () => { if (!vivant) return; $('ecplay').innerHTML = ic(audio.paused ? 'play' : 'pause'); $('ecplay').setAttribute('aria-label', audio.paused ? 'Lecture' : 'Pause'); };
+  const aller = (t) => { audio.currentTime = Math.max(0, Math.min(ep.duree - 0.1, t)); maj(); };
+  const maj = () => {
+    if (!vivant) return;
+    const t = audio.currentTime; montrer(idx(t)); $('ecpos').value = Math.round(t); $('ecnow').textContent = mmss(t);
+    if (Math.abs(t - dernierSave) > 5) { dernierSave = t; E.memoriserPosition(m.code, t); }
+    try { navigator.mediaSession?.setPositionState?.({ duration: ep.duree, position: Math.min(t, ep.duree), playbackRate: 1 }); } catch {}
+  };
+  const prec = () => { const i = idx(audio.currentTime); aller(audio.currentTime - marques[i].t > 3 || i === 0 ? marques[i].t : marques[i - 1].t); };
+  const suiv = () => { const i = idx(audio.currentTime); if (marques[i + 1]) aller(marques[i + 1].t); };
+  const jouer = () => { try { if (navigator.audioSession) navigator.audioSession.type = 'playback'; } catch {} audio.play().catch(() => {}); };
+  audio.addEventListener('timeupdate', maj); audio.addEventListener('play', etatPlay); audio.addEventListener('pause', etatPlay);
+  audio.addEventListener('ended', () => { E.memoriserPosition(m.code, 0); etatPlay(); });
+  audio.addEventListener('loadedmetadata', () => { if (etat.pos) aller(etat.pos); });
+  $('ecplay').onclick = () => (audio.paused ? jouer() : audio.pause());
+  $('ecprev').onclick = prec; $('ecnext').onclick = suiv;
+  $('ecm10').onclick = () => aller(audio.currentTime - 10); $('ecp10').onclick = () => aller(audio.currentTime + 10);
+  $('ecpos').oninput = (e) => aller(Number(e.target.value));
+  if ('mediaSession' in navigator) {
+    const h = { play: jouer, pause: () => audio.pause(), previoustrack: prec, nexttrack: suiv, seekbackward: () => aller(audio.currentTime - 10), seekforward: () => aller(audio.currentTime + 10), seekto: (d) => aller(d.seekTime) };
+    for (const [k, f] of Object.entries(h)) { try { navigator.mediaSession.setActionHandler(k, f); } catch {} }
+  }
+  const fermer = () => {
+    vivant = false;
+    E.memoriserPosition(m.code, audio.ended ? 0 : audio.currentTime);
+    audio.pause(); audio.src = ''; URL.revokeObjectURL(url);
+    if ('mediaSession' in navigator) { for (const k of ['play', 'pause', 'previoustrack', 'nexttrack', 'seekbackward', 'seekforward', 'seekto']) { try { navigator.mediaSession.setActionHandler(k, null); } catch {} } navigator.mediaSession.metadata = null; }
+    sessionAudio(); ecouteEtat = null;
+  };
+  window.addEventListener('hashchange', function f() { window.removeEventListener('hashchange', f); fermer(); });
+  $('ecx').onclick = () => go(`#/matiere/${encodeURIComponent(m.code)}`);
+  montrer(idx(etat.pos || 0)); etatPlay(); jouer();
 }
 
 const v1 = (v) => (Array.isArray(v) ? v[0] : v);

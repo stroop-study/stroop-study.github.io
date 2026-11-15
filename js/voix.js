@@ -92,11 +92,11 @@ function wav(echantillons, taux) {
   return new Blob([buf], { type: 'audio/wav' });
 }
 
-/**
- * Lit un texte avec une voix. options : locuteur (numéro, pour les modèles à plusieurs voix),
- * vitesse (1 = normale, 0.85 = plus lent), pause (secondes entre les phrases), progression(0→1).
- */
-export async function synthese(v, texte, { locuteur = null, vitesse = 1, pause = 0.35, progression } = {}) {
+/** Prépare une voix (téléchargement si besoin) et renvoie sa fréquence d'échantillonnage. */
+export async function preparer(v, progression) { const { config } = await charger(v, progression); return config.audio.sample_rate; }
+
+/** Calcule l'audio brut (Float32) d'un texte, phrase par phrase, avec une petite pause entre les phrases. */
+export async function pcm(v, texte, { locuteur = null, vitesse = 1, pause = 0.35, progression } = {}) {
   const { session, config } = await charger(v, progression);
   const O = await ort();
   const taux = config.audio.sample_rate;
@@ -121,5 +121,30 @@ export async function synthese(v, texte, { locuteur = null, vitesse = 1, pause =
   const total = morceaux.reduce((a, m) => a + m.length, 0);
   const tout = new Float32Array(total); let o = 0;
   for (const m of morceaux) { tout.set(m, o); o += m.length; }
-  return { blob: wav(tout, taux), secondes: total / taux, nbLocuteurs: config.num_speakers || 1 };
+  return { data: tout, taux, nbLocuteurs: config.num_speakers || 1 };
+}
+
+/**
+ * Lit un texte avec une voix. options : locuteur (numéro, pour les modèles à plusieurs voix),
+ * vitesse (1 = normale, 0.85 = plus lent), pause (secondes entre les phrases), progression(0→1).
+ */
+export async function synthese(v, texte, opts = {}) {
+  const r = await pcm(v, texte, opts);
+  return { blob: wav(r.data, r.taux), secondes: r.data.length / r.taux, nbLocuteurs: r.nbLocuteurs };
+}
+
+/** Float32 → Int16 (deux fois moins de mémoire pour les longues écoutes). */
+export function enInt16(f) {
+  const o = new Int16Array(f.length);
+  for (let i = 0; i < f.length; i++) { const x = Math.max(-1, Math.min(1, f[i])); o[i] = x < 0 ? x * 32768 : x * 32767; }
+  return o;
+}
+/** Assemble des morceaux Int16 en un fichier WAV, sans tout recopier dans un seul gros tableau. */
+export function wavDe(morceaux, taux) {
+  const n = morceaux.reduce((a, m) => a + m.length, 0);
+  const h = new ArrayBuffer(44), v = new DataView(h);
+  const w = (o, t) => [...t].forEach((c, i) => v.setUint8(o + i, c.charCodeAt(0)));
+  w(0, 'RIFF'); v.setUint32(4, 36 + n * 2, true); w(8, 'WAVE'); w(12, 'fmt '); v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true);
+  v.setUint32(24, taux, true); v.setUint32(28, taux * 2, true); v.setUint16(32, 2, true); v.setUint16(34, 16, true); w(36, 'data'); v.setUint32(40, n * 2, true);
+  return new Blob([h, ...morceaux], { type: 'audio/wav' });
 }
