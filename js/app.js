@@ -11,7 +11,7 @@ import * as S from './store.js';
 import { today, isDue, dueDate, nextState, mastery, notionStats, seenCount, prioritize, shuffle, streak, INTERVALS } from './leitner.js';
 import { TYPES, TYPE_KEYS, NIVEAUX, typeLabel, timeFor, formatOf, checkCourte, sameSet, resolveVariants, nbVariantes, normalize } from './types.js';
 
-const VERSION = '2.12.2';
+const VERSION = '2.13.0';
 const $app = document.getElementById('app');
 const $tab = document.getElementById('tabbar');
 const $halos = document.getElementById('halos');
@@ -57,7 +57,56 @@ const avecContenuCodes = () => S.contenusImportes().map((c) => c.code);
 const NB_ARC = () => avecContenuCodes().length;
 const matieresDuJour = (u, k = today()) => { const ok = new Set(avecContenuCodes()); return Object.keys(u.joursM?.[k] || {}).filter((c) => ok.has(c) && u.joursM[k][c] > 0).length; };
 const estArcEnCiel = (u, k = today()) => NB_ARC() > 1 && matieresDuJour(u, k) >= NB_ARC();
-const stroopImg = (mood, cls = '') => `<img class="stroop a-${mood} ${cls}" src="assets/stroop/${STROOP[mood]}.webp" alt="Stroop la loutre" width="176" height="176" data-stroop>`;
+/* Paupières de Stroop : zone des yeux fermés (en % de l'image 640×640), posée par-dessus l'image normale. */
+const YEUX = { contente: [28.44, 19.84, 46.41, 19.06], etude: [36.72, 24.84, 38.44, 22.19], sport: [30.63, 13.44, 43.13, 25.16] };
+const stroopImg = (mood, cls = '') => {
+  const y = YEUX[mood];
+  if (!y) return `<img class="stroop a-${mood} ${cls}" src="assets/stroop/${STROOP[mood]}.webp" alt="Stroop la loutre" width="176" height="176" data-stroop>`;
+  return `<span class="stroop stroop-w a-${mood} ${cls}" data-stroop data-yeux role="img" aria-label="Stroop la loutre"><img src="assets/stroop/${STROOP[mood]}.webp" alt="" width="176" height="176" draggable="false"><img class="yeux" src="assets/stroop/yeux-${mood}.webp" alt="" draggable="false" style="left:${y[0]}%;top:${y[1]}%;width:${y[2]}%;height:${y[3]}%"><span class="zzz" aria-hidden="true"><i>z</i><i>z</i><i>z</i></span></span>`;
+};
+/* ===== Stroop vivant : clignements, réaction au toucher, sieste, soirée ===== */
+function estSoirH() { const h = new Date().getHours(); return h >= 21 || h < 4; }
+const calme = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
+const stroopsVivants = () => [...document.querySelectorAll('[data-yeux]')].filter((el) => el.isConnected && !el.closest('.stroop-pop') && el.getClientRects().length);
+function cligne(el, duree) {
+  if (el.classList.contains('dort') || el.classList.contains('pense') || el.classList.contains('ferme')) return;
+  el.classList.add('ferme');
+  setTimeout(() => el.classList.remove('ferme'), duree);
+}
+(function boucleClignements() {
+  const soir = estSoirH();
+  document.body.classList.toggle('stroop-lourd', soir);
+  if (!calme() && !document.hidden) {
+    for (const el of stroopsVivants()) {
+      const d = soir ? 520 : 150;
+      setTimeout(() => { cligne(el, d); if (!soir && Math.random() < 0.22) setTimeout(() => cligne(el, d), d + 140); }, Math.random() * 900);
+    }
+  }
+  setTimeout(boucleClignements, (soir ? 5000 : 3000) + Math.random() * 4000);
+})();
+// Sieste : 30 s sans rien toucher (hors session), Stroop s'assoupit. N'importe quel geste le réveille.
+let dernierGeste = Date.now();
+const reveil = () => { dernierGeste = Date.now(); document.querySelectorAll('[data-yeux].dort').forEach((el) => el.classList.remove('dort')); };
+['pointerdown', 'keydown', 'wheel', 'touchmove'].forEach((t) => addEventListener(t, reveil, { passive: true }));
+document.addEventListener('visibilitychange', () => { if (!document.hidden) reveil(); });
+setInterval(() => {
+  if (calme() || Date.now() - dernierGeste < 30000 || location.hash.startsWith('#/session')) return;
+  stroopsVivants().forEach((el) => el.classList.add('dort'));
+}, 1000);
+// Toucher : il ferme les yeux de plaisir et fait un petit bond.
+document.addEventListener('click', (e) => {
+  const el = e.target.closest('[data-yeux]'); if (!el || el.closest('.stroop-pop')) return;
+  el.classList.remove('ferme', 'hop'); void el.offsetWidth; el.classList.add('ferme', 'hop');
+  clearTimeout(el._t); el._t = setTimeout(() => el.classList.remove('ferme', 'hop'), 850);
+});
+// Série de bonnes réponses en session : Super Stroop surgit, les yeux fermés de joie.
+function stroopSerie(n) {
+  document.querySelector('.stroop-pop')?.remove();
+  const d = document.createElement('div'); d.className = 'stroop-pop'; d.setAttribute('role', 'status');
+  d.innerHTML = `${stroopImg('sport', 'mini ferme')}<span class="pop-txt"><b>${n} d’affilée !</b>${n >= 10 ? 'Inarrêtable.' : n >= 5 ? 'Quelle série !' : 'Ça s’enchaîne !'}</span>`;
+  document.body.appendChild(d);
+  setTimeout(() => d.classList.add('out'), 1900); setTimeout(() => d.remove(), 2300);
+}
 const pct = (n) => `${n} %`;
 const plural = (n, s, p) => `${n} ${n > 1 ? (p || s + 's') : s}`;
 
@@ -390,7 +439,7 @@ async function viewHome() {
 
   const img = $app.querySelector('[data-stroop]');
   img.onclick = () => {
-    img.classList.remove('wiggle'); void img.offsetWidth; img.classList.add('wiggle');
+    if (!img.matches('[data-yeux]')) { img.classList.remove('wiggle'); void img.offsetWidth; img.classList.add('wiggle'); }
     const lines = ['Hop hop hop, au boulot !', 'Tu sais que je suis une loutre ultra motivée ?', 'Une carte, puis une autre… et voilà !', 'Effet Stroop : dire la couleur, pas le mot. Facile, non ?', 'Je crois en toi (et en tes neurones).'];
     document.getElementById('btxt').textContent = lines[Math.floor(Math.random() * lines.length)];
   };
@@ -1114,6 +1163,8 @@ async function viewSession() {
     await S.recordAnswer(session.code, it.id, ns);
     st.ns = ns;
     session.results.push({ id: it.id, correct, before: pBefore.box || 0, after: ns.box, practice: ns.practice, ...extra });
+    session.combo = correct ? (session.combo || 0) + 1 : 0;
+    if (session.kind !== 'nuit' && (session.combo === 3 || session.combo === 5 || (session.combo >= 10 && session.combo % 5 === 0))) setTimeout(() => stroopSerie(session.combo), 450);
     if (m.negatif && isChoice) session.score += correct ? 1 : extra.skip || extra.timeout ? 0 : -1;
     else if (correct) session.score += 1;
     saveSession();
@@ -1205,7 +1256,7 @@ async function viewSession() {
       const good = new Set(it.bonnes);
       body = `<div class="qkind ${multi ? 'multi' : 'single'}">${multi ? '<span class="qk-ic">☑︎</span><span><b>QCM</b> · plusieurs réponses possibles, coche toutes les bonnes</span>' : `<span class="qk-ic">◉</span><span><b>QCU</b> · ${it.lettres ? 'format partiel, une seule bonne réponse sur 5' : 'une seule bonne réponse'}</span>`}${m.negatif ? '<span class="neg">points négatifs</span>' : ''}</div>
         <h2 class="qt">${qText}</h2>
-        ${session.reflechir && !st.answered && !st.vu ? `<div class="reflechir"><b>Prends le temps de formuler ta réponse</b><span class="small">Dans ta tête ou à voix haute : la définition, le mécanisme, l’auteur·rice, un exemple… Puis compare avec les propositions.</span><button class="btn soft" id="voir">Voir les propositions</button></div>` : `<div class="list">${st.perm.map((i) => {
+        ${session.reflechir && !st.answered && !st.vu ? `<div class="reflechir">${stroopImg('etude', 'mini pense')}<b>Prends le temps de formuler ta réponse</b><span class="small">Dans ta tête ou à voix haute : la définition, le mécanisme, l’auteur·rice, un exemple… Puis compare avec les propositions.</span><button class="btn soft" id="voir">Voir les propositions</button></div>` : `<div class="list">${st.perm.map((i) => {
           const on = st.picked.has(i); let cls = '';
           if (st.answered) { if (good.has(i)) cls = 'ok'; else if (on) cls = 'ko'; }
           return `<button class="choice ${cls}" data-i="${i}" aria-pressed="${on}" ${st.answered ? 'disabled' : ''}><span class="mk ${multi ? 's' : 'r'}">${on || (st.answered && good.has(i)) ? `<svg class="ic" viewBox="0 0 24 24">${IC.check}</svg>` : ''}</span><span>${it.lettres ? `<b>${'abcdefgh'[i]})</b> ` : ''}${esc(it.choix[i])}</span></button>`;
@@ -1268,7 +1319,7 @@ async function viewSession() {
       ${head()}${scenario()}<div class="q">${body}${feedback()}</div><div style="flex:1"></div>${foot}${flag()}</div>`;
 
     // Interactions
-    document.getElementById('voir')?.addEventListener('click', () => { st.vu = true; son('flip'); render(); });
+    document.getElementById('voir')?.addEventListener('click', () => { if (st.vu) return; st.vu = true; son('flip'); const p = document.querySelector('.reflechir .pense'); if (p && !calme()) { p.classList.remove('pense'); setTimeout(render, 380); } else render(); });
     $app.querySelectorAll('[data-i]').forEach((b) => b.onclick = () => {
       const i = Number(b.dataset.i);
       if (fmt === 'qcm') { st.picked.has(i) ? st.picked.delete(i) : st.picked.add(i); } else { st.picked = new Set([i]); }
