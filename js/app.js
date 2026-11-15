@@ -11,7 +11,7 @@ import * as S from './store.js';
 import { today, isDue, dueDate, nextState, mastery, notionStats, seenCount, prioritize, shuffle, streak, INTERVALS } from './leitner.js';
 import { TYPES, TYPE_KEYS, NIVEAUX, typeLabel, timeFor, formatOf, checkCourte, sameSet, resolveVariants, nbVariantes, normalize } from './types.js';
 
-const VERSION = '2.13.2';
+const VERSION = '2.13.3';
 const $app = document.getElementById('app');
 const $tab = document.getElementById('tabbar');
 const $halos = document.getElementById('halos');
@@ -999,7 +999,8 @@ function laboEcoute() {
   sh.back.querySelector('#lbipB').onclick = () => essai('playback', 'Façon B');
   sh.back.querySelector('#lbipC').onclick = () => essai('transient-solo', 'Façon C', true);
   sh.back.querySelector('#lbipD').onclick = () => essai('transient', 'Façon D', true);
-  let pvoix = 'tom', pnum = 0, pvit = 1, nbLoc = 125;
+  let pvoix = 'pierre', pnum = 0, pvit = 1, nbLoc = 125;
+  import('./voix.js').then((V) => V.nettoyer()).catch(() => {});
   const dessinerVoix = async () => {
     const V = await import('./voix.js');
     const box = sh.back.querySelector('#pvx');

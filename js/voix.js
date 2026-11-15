@@ -9,11 +9,16 @@ const CACHE_MODELES = 'voix-modeles-1';
 export const VOIX = [
   { id: 'tom', nom: 'Tom', genre: 'm', chemin: 'fr/fr_FR/tom/medium/fr_FR-tom-medium', mo: 64 },
   { id: 'pierre', nom: 'Pierre', genre: 'm', chemin: 'fr/fr_FR/upmc/medium/fr_FR-upmc-medium', mo: 77, locuteur: 'pierre' },
-  { id: 'gilles', nom: 'Gilles', genre: 'm', chemin: 'fr/fr_FR/gilles/low/fr_FR-gilles-low', mo: 63 },
-  { id: 'mls', nom: 'Voix MLS', genre: 'x', chemin: 'fr/fr_FR/mls/medium/fr_FR-mls-medium', mo: 77, multi: true },
   { id: 'siwis', nom: 'Siwis', genre: 'f', chemin: 'fr/fr_FR/siwis/medium/fr_FR-siwis-medium', mo: 63 },
   { id: 'jessica', nom: 'Jessica', genre: 'f', chemin: 'fr/fr_FR/upmc/medium/fr_FR-upmc-medium', mo: 77, locuteur: 'jessica' }
 ];
+
+// Voix écartées par Amandine (15/11) : on libère la place qu'elles occupaient sur le téléphone.
+const ECARTEES = ['fr/fr_FR/gilles/low/fr_FR-gilles-low', 'fr/fr_FR/mls/medium/fr_FR-mls-medium'];
+export async function nettoyer() {
+  const cache = await caches.open(CACHE_MODELES);
+  for (const c of ECARTEES) { await cache.delete(HF + c + '.onnx'); await cache.delete(HF + c + '.onnx.json'); }
+}
 
 let ortP = null;
 const ort = () => (ortP ||= import('onnxruntime-web').then((m) => { m.env.wasm.wasmPaths = BASE + 'ort/'; m.env.wasm.numThreads = 1; return m; }));
