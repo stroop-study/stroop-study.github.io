@@ -1,5 +1,5 @@
 // Notifications push : abonnement de l'appareil et réglages.
-// L'envoi est fait chaque jour par un petit programme planifié sur GitHub (dossier notif/).
+// L'envoi est fait par un programme planifié, dans un dépôt privé séparé.
 import { app } from './firebase.js';
 import { vapidKey } from './firebase-config.js';
 import * as S from './store.js';
