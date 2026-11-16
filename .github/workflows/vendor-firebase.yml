@@ -1,0 +1,52 @@
+# Copie dans l'appli (dossier vendor/) le SDK Firebase et les polices, pour ne charger aucun code
+# ni aucune police depuis un site tiers pendant l'utilisation (exigence d'Amandine).
+# Se lance tout seul quand ce fichier change, ou à la main (Actions → Vendor Firebase → Run workflow).
+name: Vendor Firebase
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/vendor-firebase.yml']
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency: vendor-firebase
+jobs:
+  copier:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      FB: '10.12.2'
+    steps:
+      - uses: actions/checkout@v4
+      - name: SDK Firebase (mêmes fichiers que ceux utilisés jusqu'ici)
+        run: |
+          rm -rf vendor/firebase && mkdir -p vendor/firebase
+          for f in firebase-app firebase-auth firebase-firestore firebase-messaging; do
+            curl -fsSL "https://www.gstatic.com/firebasejs/$FB/$f.js" -o "vendor/firebase/$f.js"
+          done
+          # Les modules s'importent entre eux par adresse absolue : on les rend relatifs.
+          sed -i "s#https://www.gstatic.com/firebasejs/$FB/#./#g" vendor/firebase/*.js
+          if grep -l "gstatic.com/firebasejs" vendor/firebase/*.js; then echo "Import absolu restant"; exit 1; fi
+          echo "$FB" > vendor/firebase/VERSION.txt
+          ls -la vendor/firebase
+      - name: Polices Outfit et Nunito
+        run: |
+          rm -rf vendor/fonts && mkdir -p vendor/fonts
+          UA='Mozilla/5.0 (Macintosh; Intel Mac OS X 13_0) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.0 Safari/605.1.15'
+          curl -fsSL -A "$UA" 'https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&family=Nunito:wght@400;600;700;800&display=swap' -o /tmp/g.css
+          cp /tmp/g.css vendor/fonts/fonts.css
+          i=0
+          for u in $(grep -o 'https://fonts.gstatic.com/[^)]*' /tmp/g.css | sort -u); do
+            i=$((i+1)); n="f$i.woff2"
+            curl -fsSL "$u" -o "vendor/fonts/$n"
+            sed -i "s#$u#./$n#g" vendor/fonts/fonts.css
+          done
+          if grep -q 'fonts.gstatic.com' vendor/fonts/fonts.css; then echo "Adresse distante restante"; exit 1; fi
+          du -sh vendor/fonts; ls vendor/fonts | wc -l
+      - name: Enregistrer
+        run: |
+          git config user.name "github-actions"
+          git config user.email "github-actions@users.noreply.github.com"
+          git add vendor/firebase vendor/fonts
+          git commit -m "vendor : SDK Firebase $FB et polices hébergés dans l'appli" || echo "rien de neuf"
+          git push
