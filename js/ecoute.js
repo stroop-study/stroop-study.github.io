@@ -33,7 +33,7 @@ export function pourOral(t) {
 const fin = (t) => (/[.!?…:]$/.test(t) ? t : t + '.');
 
 /** Les questions qu'on peut faire à l'oral (pas les tris, associations, ordres ni figures). */
-export const audible = (it) => ['flashcard', 'vf', 'qcu', 'qcm', 'courte'].includes(formatOf(it)) && !it.figure && !it.lettres;
+export const audible = (it) => ['flashcard', 'vf', 'qcu', 'qcm', 'courte', 'redaction'].includes(formatOf(it)) && !it.figure && !it.lettres;
 
 /** Découpe le programme d'écoute en morceaux : { type: 'parole' | 'silence' | 'bip', texte, secondes, marque } */
 export function programme({ chapitres, items, contenu, silence }) {
@@ -62,6 +62,7 @@ export function programme({ chapitres, items, contenu, silence }) {
         if (it.type === 'cas' && it.scenario) { q += fin(it.scenario) + ' '; ecrit += it.scenario + '\n\n'; }
         if (fmt === 'flashcard') { q += it.recto; ecrit += it.recto; rep = it.verso; repEcrit = it.verso; }
         else if (fmt === 'vf') { q += fin(it.affirmation) + ' Vrai ou faux ?'; ecrit += it.affirmation + '\nVrai ou faux ?'; rep = (it.vrai ? 'Vrai. ' : 'Faux. ') + (it.explication || ''); repEcrit = rep; }
+        else if (fmt === 'redaction') { q += it.question; ecrit += it.question; rep = 'Les points attendus : ' + it.attendus.join('. ') + '.'; repEcrit = it.attendus.map((a) => '• ' + a).join('\n'); }
         else if (fmt === 'courte') { q += it.question; ecrit += it.question; rep = (it.reponses?.[0] || '') + '. ' + (it.explication || ''); repEcrit = rep; }
         else {
           const ordre = it.choix.map((_, k) => k).sort(() => Math.random() - 0.5);

@@ -9,7 +9,8 @@ export const TYPES = [
   { key: 'assoc', label: 'Association', short: 'Association' },
   { key: 'tri', label: 'Tri', short: 'Tri en catégories' },
   { key: 'courte', label: 'Réponse courte', short: 'Réponse courte' },
-  { key: 'cas', label: 'Cas pratique', short: 'Cas pratique' }
+  { key: 'cas', label: 'Cas pratique', short: 'Cas pratique' },
+  { key: 'redaction', label: 'Rédaction', short: 'Rédaction' }
 ];
 export const TYPE_KEYS = TYPES.map((t) => t.key);
 export const typeLabel = (k) => (TYPES.find((t) => t.key === k) || {}).short || k;
@@ -76,10 +77,15 @@ function lev(a, b) {
 /** Réponse courte : tolère les accents, la casse et une petite faute de frappe. */
 const sansArticle = (s) => s.replace(/^(le|la|les|l|un|une|des|du) /, '');
 
+// Nombres : « 15,0 », « 15 points », « 48 % » valent 15 et 48.
+const nombre = (s) => { const m = String(s || '').trim().match(/^([+\-−]?\d+(?:[.,]\d+)?)\s*(%|points?|pts?|ans|mois|jours?|semaines?)?\.?$/i); return m ? Number(m[1].replace(',', '.').replace('−', '-')) : null; };
+
 export function checkCourte(input, reponses) {
   const x = sansArticle(normalize(input));
   if (!x) return false;
+  const nx = nombre(input);
   return (reponses || []).some((r) => {
+    if (nx !== null && nombre(r) !== null) return nx === nombre(r);
     const y = sansArticle(normalize(r));
     if (x === y) return true;
     const tol = y.length >= 12 ? 2 : y.length >= 5 ? 1 : 0;

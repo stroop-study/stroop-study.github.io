@@ -285,6 +285,7 @@ function checkElement(e) {
     case 'assoc': if (!Array.isArray(e.paires) || e.paires.length < 2) bad('Association incomplète'); break;
     case 'tri': if (!Array.isArray(e.categories) || !Array.isArray(e.items) || !e.items.length) bad('Tri incomplet'); break;
     case 'courte': if (!e.question || !Array.isArray(e.reponses) || !e.reponses.length) bad('Réponse courte incomplète'); break;
+    case 'redaction': if (!e.question || !Array.isArray(e.attendus) || e.attendus.length < 2) bad('Rédaction incomplète'); break;
     default: bad(`Type inconnu (${e.type})`);
   }
   for (const k of ['figure', 'figureVerso', 'figureCorrection']) if (e[k]) checkFigure(e[k], e.id);

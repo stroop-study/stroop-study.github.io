@@ -11,7 +11,7 @@ import * as S from './store.js';
 import { today, isDue, dueDate, nextState, mastery, notionStats, seenCount, prioritize, shuffle, streak, INTERVALS } from './leitner.js';
 import { TYPES, TYPE_KEYS, NIVEAUX, typeLabel, timeFor, formatOf, checkCourte, sameSet, resolveVariants, nbVariantes, normalize } from './types.js';
 
-const VERSION = '2.15.1';
+const VERSION = '2.16.0';
 const $app = document.getElementById('app');
 const $tab = document.getElementById('tabbar');
 const $halos = document.getElementById('halos');
@@ -500,14 +500,14 @@ function getCfg(code) {
   c = c || {};
   return {
     // depuis la 2.8, les flashcards ont leur propre mode : décochées par défaut dans les quiz
-    types: Array.isArray(c.types) ? c.types.filter((t) => TYPE_KEYS.includes(t) && (c.v >= 3 || t !== 'flashcard')) : TYPE_KEYS.filter((t) => t !== 'flashcard'),
+    types: Array.isArray(c.types) ? [...c.types.filter((t) => TYPE_KEYS.includes(t) && (c.v >= 3 || t !== 'flashcard')), ...(c.v >= 6 || c.types.includes('redaction') ? [] : ['redaction'])] : TYPE_KEYS.filter((t) => t !== 'flashcard'),
     n: c.n ?? 20,
     niveau: c.niveau ?? 'tous',
     chrono: c.v >= 5 ? !!c.chrono : true,
     reflechir: !!c.reflechir
   };
 }
-const saveCfg = (code, cfg) => localStorage.setItem(CFG_KEY(code), JSON.stringify({ ...cfg, v: 5 }));
+const saveCfg = (code, cfg) => localStorage.setItem(CFG_KEY(code), JSON.stringify({ ...cfg, v: 6 }));
 const matchCfg = (it, cfg) => cfg.types.includes(it.type) && (cfg.niveau === 'tous' || (it.niveau || 1) === Number(cfg.niveau));
 function cfgSummary(cfg) {
   const t = cfg.types.length === TYPE_KEYS.length ? 'tous les types' : plural(cfg.types.length, 'type');
@@ -1284,7 +1284,7 @@ async function viewSession() {
   const fmt = formatOf(it);
   const total = session.kind === 'rafale' ? null : session.ids.length;
   const progress = total ? Math.round((session.i / total) * 100) : Math.round(((120000 - (session.endsAt - Date.now())) / 120000) * 100);
-  const timed = session.chrono && it.type !== 'flashcard';
+  const timed = session.chrono && !['flashcard', 'redaction'].includes(it.type);
   const st = {
     flipped: false, answered: false, correct: null, pif: false, skip: false, timeout: false,
     picked: new Set(), text: '',
@@ -1488,6 +1488,19 @@ async function viewSession() {
             ${st.answered && pick !== cat ? `<span class="small tfix">${pick === undefined ? 'Non classé' : 'Pas « ' + esc(it.categories[pick]) + ' »'} → c’était « ${esc(it.categories[cat])} »</span>` : ''}</div>`;
         }).join('')}</div>`;
       foot = footer(Object.keys(st.triPick).length === it.items.length);
+    } else if (fmt === 'redaction') {
+      // Question de rédaction : on écrit (ou on formule dans sa tête), puis on compare aux points attendus.
+      const pts = st.points || (st.points = new Set());
+      const n = it.attendus.length, k = pts.size;
+      body = `<h2 class="qt">${qText}</h2>
+        ${!st.vu ? `<label class="field"><span class="sr">Ta réponse</span><textarea id="red" rows="7" placeholder="Rédige ta réponse, ou fais-la dans ta tête, puis compare au corrigé. Rien n’est enregistré.">${esc(st.text)}</textarea></label>`
+          : `${st.text.trim() ? `<details class="card red-brouillon"><summary class="small"><b>Ta réponse</b></summary><p class="small" style="white-space:pre-wrap;margin:8px 0 0">${esc(st.text)}</p></details>` : ''}
+          <p class="small muted" style="margin:0">${st.answered ? 'Les points attendus :' : 'Coche les points que tu avais dans ta réponse :'}</p>
+          <div class="list">${it.attendus.map((a, i) => `<button class="choice ${st.answered ? (pts.has(i) ? 'ok' : 'miss') : ''}" data-pt="${i}" aria-pressed="${pts.has(i)}" ${st.answered ? 'disabled' : ''}><span class="mk s">${pts.has(i) ? `<svg class="ic" viewBox="0 0 24 24">${IC.check}</svg>` : ''}</span><span>${esc(a)}</span></button>`).join('')}</div>
+          ${it.corrige && st.answered ? `<div class="card" style="padding:12px"><b class="small">Exemple de rédaction</b><p class="small" style="margin:6px 0 0;white-space:pre-wrap">${esc(it.corrige)}</p></div>` : ''}`}`;
+      foot = st.answered ? footer(true) : !st.vu
+        ? `<div class="two"><button class="btn plain" id="skip">Je ne sais pas</button><button class="btn primary" id="voirRed">Voir le corrigé</button></div>`
+        : `<button class="btn primary block" id="valRed">J’avais ${k} point${k > 1 ? 's' : ''} sur ${n}</button>`;
     } else if (fmt === 'courte') {
       body = `<h2 class="qt">${qText}</h2>
         <label class="field"><span class="sr">Ta réponse</span><input id="rep" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="Ta réponse…" value="${esc(st.text)}" ${st.answered ? 'disabled' : ''} enterkeyhint="done"></label>
@@ -1527,6 +1540,11 @@ async function viewSession() {
       rep.onkeydown = (e) => { if (e.key === 'Enter') { e.preventDefault(); document.getElementById('val')?.click(); } };
       setTimeout(() => rep.focus(), 30);
     }
+    const red = document.getElementById('red');
+    if (red) red.oninput = () => { st.text = red.value; };
+    document.getElementById('voirRed')?.addEventListener('click', () => { st.vu = true; son('flip'); render(); });
+    $app.querySelectorAll('[data-pt]').forEach((b) => b.onclick = () => { const i = Number(b.dataset.pt); st.points.has(i) ? st.points.delete(i) : st.points.add(i); son('tap'); render(); });
+    document.getElementById('valRed')?.addEventListener('click', async () => { await answer(st.points.size / it.attendus.length >= 0.7); render(); });
     const val = document.getElementById('val');
     if (val) val.onclick = async () => { await answer(grade()); render(); };
     document.getElementById('skip')?.addEventListener('click', async () => { st.skip = true; await answer(false, { skip: true }); render(); });
