@@ -1,6 +1,6 @@
 // Service worker : met l'appli en cache pour qu'elle s'ouvre même sans réseau.
 // Les données (cartes, progression) sont gérées hors ligne par Firestore, pas ici.
-const VERSION = 'v2.14.2';
+const VERSION = 'v2.15.0';
 const CACHE = `stroop-${VERSION}`;
 // Moteur de voix (gros fichiers qui ne changent pas) : cache séparé, gardé d'une version à l'autre.
 const VENDOR = 'vendor-piper-1';
@@ -10,7 +10,11 @@ const FB_FILES = ['vendor/firebase/firebase-app.js', 'vendor/firebase/firebase-a
   'vendor/fonts/fonts.css', ...[1, 2, 3, 4, 5, 6, 7].map((i) => `vendor/fonts/f${i}.woff2`)];
 const SHELL = [
   './', 'index.html', 'manifest.webmanifest', 'css/app.css',
-  'js/app.js', 'js/store.js', 'js/leitner.js', 'js/types.js', 'js/recherche.js', 'js/voix.js', 'js/ecoute.js', 'js/figures.js', 'js/sons.js', 'js/notifs.js', 'js/firebase.js', 'js/firebase-config.js',
+  'js/app.js', 'js/store.js', 'js/leitner.js', 'js/types.js', 'js/recherche.js', 'js/voix.js', 'js/ecoute.js', 'js/figures.js', 'js/sons.js', 'js/notifs.js', 'js/firebase.js', 'js/firebase-config.js'
+];
+// Images et icônes : cache séparé, gardé d'une version à l'autre (changer son nom si une image change).
+const ASSETS = 'assets-2';
+const ASSET_FILES = [
   'assets/stroop/stroop-contente.webp', 'assets/stroop/stroop-dodo.webp',
   'assets/stroop/stroop-fete.webp', 'assets/stroop/stroop-sport.webp', 'assets/stroop/stroop-etude.webp', 'assets/stroop/stroop-arcenciel.webp',
   'assets/stroop/yeux-contente.webp', 'assets/stroop/yeux-etude.webp', 'assets/stroop/yeux-sport.webp',
@@ -18,15 +22,17 @@ const SHELL = [
 ];
 
 self.addEventListener('install', (e) => {
+  // cache: 'reload' : on prend les fichiers neufs sur le serveur, pas une copie du cache HTTP du navigateur.
   e.waitUntil(Promise.all([
-    caches.open(CACHE).then((c) => c.addAll(SHELL)),
+    caches.open(CACHE).then((c) => c.addAll(SHELL.map((u) => new Request(u, { cache: 'reload' })))),
+    caches.open(ASSETS).then(async (c) => { for (const f of ASSET_FILES) if (!(await c.match(f))) await c.add(f); }),
     caches.open(VENDOR_FB).then(async (c) => { for (const f of FB_FILES) if (!(await c.match(f))) await c.add(f); })
   ]).then(() => self.skipWaiting()));
 });
 
 self.addEventListener('activate', (e) => {
   e.waitUntil(
-    caches.keys().then((keys) => Promise.all(keys.filter((k) => (k.startsWith('stroop-') && k !== CACHE) || (k.startsWith('vendor-fb-') && k !== VENDOR_FB)).map((k) => caches.delete(k))))
+    caches.keys().then((keys) => Promise.all(keys.filter((k) => (k.startsWith('stroop-') && k !== CACHE) || (k.startsWith('vendor-fb-') && k !== VENDOR_FB) || (k.startsWith('assets-') && k !== ASSETS)).map((k) => caches.delete(k))))
       .then(() => self.clients.claim())
   );
 });
@@ -50,16 +56,17 @@ self.addEventListener('fetch', (e) => {
     e.respondWith(caches.open(VENDOR).then((c) => c.match(req).then((hit) => hit || fetch(req).then((res) => { if (res.ok) c.put(req, res.clone()); return res; }))));
     return;
   }
-  // Réseau d'abord pour l'appli (pour recevoir les mises à jour), cache si hors ligne.
-  if (sameOrigin) {
-    e.respondWith(
-      fetch(req).then((res) => {
-        if (res.ok) { const copy = res.clone(); caches.open(CACHE).then((c) => c.put(req, copy)); }
-        return res;
-      }).catch(() => caches.match(req).then((r) => r || caches.match('index.html')))
-    );
+  if (url.pathname.includes('/assets/')) {
+    e.respondWith(caches.open(ASSETS).then((c) => c.match(req, { ignoreSearch: true }).then((hit) => hit || fetch(req).then((res) => { if (res.ok) c.put(req, res.clone()); return res; }))));
     return;
   }
+  // Appli : cache d'abord, ouverture immédiate même en réseau faible. Les mises à jour arrivent par sw.js
+  // (le navigateur le vérifie à chaque ouverture) : une nouvelle version remplit un nouveau cache complet.
+  // Les fichiers hors du pré-cache (firestore.rules, voix…) restent servis par le réseau.
+  e.respondWith(caches.open(CACHE).then((c) => c.match(req, { ignoreSearch: req.mode === 'navigate' }).then((hit) => {
+    if (hit) return hit;
+    return fetch(req).catch(() => (req.mode === 'navigate' ? c.match('index.html') : Response.error()));
+  })));
 });
 
 // ===== Notifications push (envoyées par le programme planifié via Firebase Cloud Messaging) =====

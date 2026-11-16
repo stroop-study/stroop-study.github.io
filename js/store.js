@@ -1,5 +1,5 @@
 // Couche de données : lecture et écriture dans Firestore, avec un petit cache en mémoire.
-import { db, doc, getDoc, setDoc, collection, getDocs } from './firebase.js';
+import { db, doc, getDoc, getDocFromCache, setDoc, collection, getDocs, getDocsFromCache, increment } from './firebase.js';
 import { today } from './leitner.js';
 import { checkFigure } from './figures.js';
 
@@ -14,8 +14,21 @@ const DEFAULT_MATIERES = [
   { code: 'PAT1', nom: 'Psychopathologie', couleur: 'vert' }
 ].map((m, i) => ({ ...m, ordre: i, semestre: 'L1-S1', examens: [], modalites: [], negatif: false }));
 
-const state = { uid: null, email: '', user: null, contenu: {}, progres: {}, isAdmin: false, acces: null, libOk: false };
+const state = { uid: null, email: '', user: null, contenu: {}, progres: {}, touches: {}, isAdmin: false, acces: null, libOk: false };
 
+// Lecture rapide : on demande au serveur, mais s'il traîne (métro, amphi), on prend la copie locale de
+// Firestore au bout de 2,5 s ; la réponse du serveur, quand elle arrive, est passée à `plusTard`.
+const LENT = 2500;
+async function rapide(ref, plusTard) {
+  const serveur = getDoc(ref);
+  const r = await Promise.race([serveur.then((s) => ({ s }), (e) => ({ e })), new Promise((res) => setTimeout(() => res(null), LENT))]);
+  if (r?.s) return r.s;
+  try {
+    const c = await getDocFromCache(ref);
+    if (!r && plusTard) serveur.then(plusTard).catch(() => {});
+    return c;
+  } catch { if (r?.e) throw r.e; return serveur; }
+}
 const withTimeout = (p, ms = 6000) => Promise.race([p, new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), ms))]);
 
 const userRef = () => doc(db, 'users', state.uid);
@@ -25,8 +38,10 @@ const accesRef = () => doc(db, 'config', 'acces');
 const progresRef = (code) => doc(db, 'users', state.uid, 'progres', code);
 
 export async function loadUser(uid, displayName, email) {
-  state.uid = uid; state.email = (email || '').toLowerCase(); state.contenu = {}; state.progres = {}; state.isAdmin = false; state.acces = null; state.libOk = false;
-  const snap = await getDoc(userRef());
+  state.uid = uid; state.email = (email || '').toLowerCase(); state.contenu = {}; state.progres = {}; state.touches = {}; state.isAdmin = false; state.acces = null; state.libOk = false;
+  let snap = await rapide(userRef(), (s) => { if (s.exists() && state.uid === uid) fusionnerUser(s.data()); });
+  // Fiche absente de la copie locale : seul le serveur peut dire qu'elle n'existe pas (sinon on écraserait tout).
+  if (!snap.exists() && snap.metadata?.fromCache) snap = await getDoc(userRef());
   if (snap.exists()) {
     state.user = snap.data();
   } else {
@@ -45,6 +60,16 @@ export async function loadUser(uid, displayName, email) {
   state.user.joursM = state.user.joursM || {};
   state.user.matieres = state.user.matieres || [];
   return state.user;
+}
+
+// Données du serveur arrivées après l'affichage : on garde le plus grand compteur de chaque jour
+// (les réponses données entre-temps sur cet appareil sont déjà envoyées en incréments).
+function fusionnerUser(d) {
+  const u = state.user; if (!u) return;
+  const maxi = (a = {}, b = {}) => { const o = { ...a }; for (const k in b) o[k] = Math.max(o[k] || 0, b[k] || 0); return o; };
+  const jours = maxi(u.jours, d.jours), temps = maxi(u.temps, d.temps), joursM = { ...(d.joursM || {}) };
+  for (const j in u.joursM || {}) joursM[j] = maxi(u.joursM[j], joursM[j]);
+  Object.assign(u, d, { jours, temps, joursM, matieres: d.matieres || u.matieres });
 }
 
 export const getUser = () => state.user;
@@ -73,8 +98,17 @@ export async function loadAcces() {
 /** Charge toute la bibliothèque commune et ajoute ses matières à la liste de la personne. */
 export async function loadLibrary() {
   try {
-    const snap = await withTimeout(getDocs(collection(db, 'bibliotheque')), 10000);
-    snap.forEach((d) => { state.contenu[d.id] = decodeContenu(d.data()); });
+    const lire = (snap) => { let n = 0; snap.forEach((d) => { state.contenu[d.id] = decodeContenu(d.data()); n++; }); return n; };
+    const serveur = getDocs(collection(db, 'bibliotheque'));
+    const r = await Promise.race([serveur.then((s) => ({ s }), (e) => ({ e })), new Promise((res) => setTimeout(() => res(null), LENT))]);
+    if (r?.s) lire(r.s);
+    else {
+      // Serveur lent ou injoignable : la copie locale d'abord, la version du serveur dès qu'elle arrive.
+      let n = 0;
+      try { n = lire(await getDocsFromCache(collection(db, 'bibliotheque'))); } catch { n = 0; }
+      if (!n) lire(await withTimeout(serveur, 10000));
+      else if (!r) serveur.then(lire).catch(() => {});
+    }
     state.libOk = true;
   } catch (e) {
     state.libOk = false;
@@ -157,7 +191,12 @@ export async function getContenu(code) {
 
 export async function getProgres(code) {
   if (state.progres[code]) return state.progres[code];
-  const snap = await getDoc(progresRef(code));
+  const touche = (state.touches[code] = state.touches[code] || new Set());
+  const snap = await rapide(progresRef(code), (s) => {
+    // Réponses venues d'un autre appareil : on les prend, sauf pour les cartes revues ici entre-temps.
+    const items = (s.exists() && s.data().items) || {}, p = state.progres[code];
+    if (p) for (const id in items) if (!touche.has(id)) p[id] = items[id];
+  });
   state.progres[code] = (snap.exists() && snap.data().items) || {};
   return state.progres[code];
 }
@@ -166,24 +205,26 @@ export async function getProgres(code) {
 export function addTime(sec) {
   if (!(sec > 0)) return;
   const j = today();
-  state.user.temps[j] = Math.round((state.user.temps[j] || 0) + sec);
-  setDoc(userRef(), { temps: { [j]: state.user.temps[j] } }, { merge: true }).catch(console.error);
+  const s = Math.round(sec); if (!s) return;
+  state.user.temps[j] = (state.user.temps[j] || 0) + s;
+  // Incrément côté serveur : l'iPad et le téléphone s'additionnent au lieu de s'écraser.
+  setDoc(userRef(), { temps: { [j]: increment(s) } }, { merge: true }).catch(console.error);
 }
 
 /** Enregistre la réponse à un élément et valide la journée. */
 export async function recordAnswer(code, id, newState, { countDay = true } = {}) {
   const prog = await getProgres(code);
   prog[id] = { ...(prog[id] || {}), ...newState };
+  (state.touches[code] = state.touches[code] || new Set()).add(id);
   const j = today();
   if (countDay) {
     state.user.jours[j] = (state.user.jours[j] || 0) + 1;
     const jm = (state.user.joursM[j] = state.user.joursM[j] || {});
     jm[code] = (jm[code] || 0) + 1;
-    setDoc(userRef(), { joursM: { [j]: { [code]: jm[code] } } }, { merge: true }).catch(console.error);
+    setDoc(userRef(), { jours: { [j]: increment(1) }, joursM: { [j]: { [code]: increment(1) } } }, { merge: true }).catch(console.error);
   }
   // Écritures non bloquantes : hors ligne, Firestore les garde et les envoie plus tard.
   setDoc(progresRef(code), { items: { [id]: prog[id] } }, { merge: true }).catch(console.error);
-  setDoc(userRef(), { jours: { [j]: state.user.jours[j] } }, { merge: true }).catch(console.error);
 }
 
 // Signalements partagés : chaque signalement est aussi copié dans /signalements pour que l'admin

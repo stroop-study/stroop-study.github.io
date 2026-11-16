@@ -56,16 +56,32 @@ async function charger(v, progression) {
   return s;
 }
 
-async function phonemes(texte, voixEspeak) {
-  const { createPiperPhonemize } = await import('../vendor/piper/piper-o91UDS6e.js');
-  return new Promise((ok, ko) => {
-    const t = setTimeout(() => ko(new Error('phonémisation trop longue')), 20000);
-    createPiperPhonemize({
-      print: (d) => { clearTimeout(t); try { ok(JSON.parse(d)); } catch (e) { ko(e); } },
-      printErr: () => {},
+// Phonémiseur (espeak-ng compilé en WebAssembly) : une seule instance, réutilisée pour toutes les phrases.
+// Le recréer à chaque phrase relisait 18 Mo et faisait grimper la mémoire (risque de fermeture sur iPhone).
+let moteurPh = null, sortiePh = null, filePh = Promise.resolve();
+function moteurPhonemes() {
+  if (!moteurPh) {
+    moteurPh = import('../vendor/piper/piper-o91UDS6e.js').then(({ createPiperPhonemize }) => createPiperPhonemize({
+      print: (d) => sortiePh?.push(d), printErr: () => {}, noExitRuntime: true,
       locateFile: (u) => (u.endsWith('.wasm') ? BASE + 'phonemize/piper_phonemize.wasm' : u.endsWith('.data') ? BASE + 'phonemize/piper_phonemize.data' : u)
-    }).then((m) => m.callMain(['-l', voixEspeak, '--input', JSON.stringify([{ text: texte }]), '--espeak_data', '/espeak-ng-data'])).catch(ko);
+    }));
+    moteurPh.catch(() => { moteurPh = null; });
+  }
+  return moteurPh;
+}
+/** Phonèmes de plusieurs phrases en un seul appel (une ligne JSON par phrase). */
+function phonemesLot(textes, voixEspeak) {
+  const tache = filePh.then(async () => {
+    const m = await moteurPhonemes();
+    sortiePh = [];
+    try { m.callMain(['-l', voixEspeak, '--input', JSON.stringify(textes.map((text) => ({ text }))), '--espeak_data', '/espeak-ng-data']); }
+    catch (e) { if (!(e?.name === 'ExitStatus' && !e.status)) { moteurPh = null; sortiePh = null; throw e; } }
+    const lignes = sortiePh; sortiePh = null;
+    if (lignes.length !== textes.length) { moteurPh = null; throw new Error('phonémisation incomplète'); }
+    return lignes.map((l) => JSON.parse(l));
   });
+  filePh = tache.catch(() => {});
+  return tache;
 }
 
 /** Numéros de phonèmes selon la table du modèle lui-même (certains modèles, comme Gilles, ont une table plus courte). */
@@ -105,8 +121,9 @@ export async function pcm(v, texte, { locuteur = null, vitesse = 1, pause = 0.35
   if (config.num_speakers > 1) sid = locuteur ?? (v.locuteur != null ? config.speaker_id_map[v.locuteur] : 0) ?? 0;
   const morceaux = [];
   const silence = new Float32Array(Math.round(taux * pause));
-  for (const p of phrases(texte)) {
-    const ph = await phonemes(p, config.espeak.voice);
+  const lot = phrases(texte);
+  const phs = lot.length ? await phonemesLot(lot, config.espeak.voice) : [];
+  for (const ph of phs) {
     const ids = idsPour(ph, config);
     if (ids.length < 3) continue;
     const feeds = {

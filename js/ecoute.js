@@ -111,10 +111,11 @@ export async function construire(P, voix, { vitesse = 1, progression, annule } =
   return { blob: V.wavDe(morceaux, taux), marques, duree: n / taux };
 }
 
-/** Garde la dernière écoute d'une matière sur le téléphone, pour la réécouter sans tout recalculer. */
+/** Garde la dernière écoute (une seule, toutes matières confondues : un épisode pèse plusieurs dizaines de Mo). */
 export async function garder(code, ep) {
   try {
     const c = await caches.open(CACHE);
+    for (const r of await c.keys()) { const autre = decodeURIComponent(new URL(r.url).pathname).match(/\/ecoute\/(.+)\.wav$/)?.[1]; if (autre && autre !== code) { await c.delete(r); localStorage.removeItem(`stroop-ecoute-${autre}`); } }
     await c.put(`/ecoute/${code}.wav`, new Response(ep.blob, { headers: { 'content-type': 'audio/wav' } }));
     localStorage.setItem(`stroop-ecoute-${code}`, JSON.stringify({ marques: ep.marques, duree: ep.duree, titre: ep.titre, le: Date.now(), pos: 0 }));
   } catch {}
@@ -122,7 +123,10 @@ export async function garder(code, ep) {
 export async function retrouver(code) {
   try {
     const meta = JSON.parse(localStorage.getItem(`stroop-ecoute-${code}`) || 'null'); if (!meta) return null;
-    const r = await (await caches.open(CACHE)).match(`/ecoute/${code}.wav`); if (!r) return null;
+    const c = await caches.open(CACHE);
+    // Au-delà de 14 jours, l'épisode est effacé pour libérer la place.
+    if (Date.now() - (meta.le || 0) > 14 * 864e5) { await c.delete(`/ecoute/${code}.wav`); localStorage.removeItem(`stroop-ecoute-${code}`); return null; }
+    const r = await c.match(`/ecoute/${code}.wav`); if (!r) return null;
     return { ...meta, blob: await r.blob() };
   } catch { return null; }
 }

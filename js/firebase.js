@@ -1,4 +1,4 @@
-// Initialisation Firebase (SDK modulaire chargé depuis le CDN de Google, sans outil de build).
+// Initialisation Firebase (SDK modulaire hébergé dans vendor/, sans outil de build ni CDN).
 import { initializeApp } from '../vendor/firebase/firebase-app.js';
 import {
   getAuth, onAuthStateChanged, GoogleAuthProvider, signInWithPopup, signInWithRedirect, getRedirectResult, sendEmailVerification,
@@ -7,7 +7,7 @@ import {
 } from '../vendor/firebase/firebase-auth.js';
 import {
   initializeFirestore, persistentLocalCache, persistentMultipleTabManager,
-  doc, getDoc, setDoc, updateDoc, deleteField, collection, getDocs, writeBatch
+  doc, getDoc, getDocFromCache, setDoc, updateDoc, deleteField, collection, getDocs, getDocsFromCache, writeBatch, increment
 } from '../vendor/firebase/firebase-firestore.js';
 import { firebaseConfig } from './firebase-config.js';
 
@@ -29,5 +29,5 @@ export const db = dbInstance;
 export {
   onAuthStateChanged, GoogleAuthProvider, signInWithPopup, signInWithRedirect, getRedirectResult, sendEmailVerification, signInWithEmailAndPassword,
   createUserWithEmailAndPassword, sendPasswordResetEmail, signOut,
-  doc, getDoc, setDoc, updateDoc, deleteField, collection, getDocs, writeBatch
+  doc, getDoc, getDocFromCache, setDoc, updateDoc, deleteField, collection, getDocs, getDocsFromCache, writeBatch, increment
 };
