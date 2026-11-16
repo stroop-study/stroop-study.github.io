@@ -23,7 +23,7 @@ export function etat() {
 export async function activer() {
   const perm = await Notification.requestPermission();
   if (perm !== 'granted') return false;
-  const { getMessaging, getToken } = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-messaging.js');
+  const { getMessaging, getToken } = await import('../vendor/firebase/firebase-messaging.js');
   const reg = await navigator.serviceWorker.ready;
   const token = await getToken(getMessaging(app), { vapidKey, serviceWorkerRegistration: reg });
   if (!token) return false;

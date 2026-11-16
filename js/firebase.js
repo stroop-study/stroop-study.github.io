@@ -1,14 +1,14 @@
 // Initialisation Firebase (SDK modulaire chargé depuis le CDN de Google, sans outil de build).
-import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js';
+import { initializeApp } from '../vendor/firebase/firebase-app.js';
 import {
   getAuth, onAuthStateChanged, GoogleAuthProvider, signInWithPopup, signInWithRedirect, getRedirectResult, sendEmailVerification,
   signInWithEmailAndPassword, createUserWithEmailAndPassword, sendPasswordResetEmail, signOut,
   setPersistence, browserLocalPersistence
-} from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
+} from '../vendor/firebase/firebase-auth.js';
 import {
   initializeFirestore, persistentLocalCache, persistentMultipleTabManager,
   doc, getDoc, setDoc, updateDoc, deleteField, collection, getDocs, writeBatch
-} from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
+} from '../vendor/firebase/firebase-firestore.js';
 import { firebaseConfig } from './firebase-config.js';
 
 export const app = initializeApp(firebaseConfig);
