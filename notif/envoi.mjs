@@ -127,11 +127,11 @@ function api(projet, token, fetchFn) {
     async marquer(uid, envoye) {
       const fields = { notifEnvoye: { mapValue: { fields: Object.fromEntries(Object.entries(envoye).map(([k, v]) => [k, { stringValue: v }])) } } };
       const r = await fetchFn(`${base}/users/${uid}?updateMask.fieldPaths=notifEnvoye`, { method: 'PATCH', headers: H, body: JSON.stringify({ fields }) });
-      if (!r.ok) console.error('Écriture impossible', uid, r.status, await r.text());
+      if (!r.ok) console.error('Écriture impossible', r.status); // dépôt public : jamais d'identifiant ni de contenu dans les journaux
     },
     async oublierJeton(uid, tok) {
       const r = await fetchFn(`${base}/users/${uid}?updateMask.fieldPaths=${encodeURIComponent(`notif.tokens.\`${tok}\``)}`, { method: 'PATCH', headers: H, body: JSON.stringify({ fields: {} }) });
-      if (!r.ok) console.error('Suppression du jeton impossible', uid, r.status);
+      if (!r.ok) console.error('Suppression du jeton impossible', r.status);
     },
     async envoyer(tok, msg) {
       const r = await fetchFn(`https://fcm.googleapis.com/v1/projects/${projet}/messages:send`, {
@@ -147,7 +147,8 @@ function api(projet, token, fetchFn) {
 
 // ---------- Programme principal ----------
 export async function main({ fetchFn = fetch, now = new Date(), env = process.env } = {}) {
-  const sa = JSON.parse(env.FIREBASE_SERVICE_ACCOUNT || '{}');
+  let sa;
+  try { sa = JSON.parse(env.FIREBASE_SERVICE_ACCOUNT || '{}'); } catch { console.error('Secret FIREBASE_SERVICE_ACCOUNT illisible.'); return []; }
   if (!sa.private_key) { console.log('Secret FIREBASE_SERVICE_ACCOUNT pas encore configuré : rien à faire.'); return []; }
   const dry = env.DRY_RUN === '1';
   const db = api(sa.project_id, await jeton(sa, fetchFn), fetchFn);
@@ -177,17 +178,18 @@ export async function main({ fetchFn = fetch, now = new Date(), env = process.en
     const envoye = { ...(u.notifEnvoye || {}) };
     for (const msg of msgs) {
       journal.push({ uid: u.id, ...msg });
-      console.log(`${dry ? '[essai] ' : ''}${u.id.slice(0, 6)}… ${msg.creneau} : ${msg.title} — ${msg.body}`);
       if (dry) continue;
       for (const tok of Object.keys(u.notif.tokens || {})) {
         const res = await db.envoyer(tok, msg);
         if (res === 'perime') await db.oublierJeton(u.id, tok);
-        else if (res !== 'ok') console.error(res);
+        else if (res !== 'ok') console.error('Envoi refusé par le service de notifications');
       }
       if (msg.creneau !== 'test') envoye[msg.creneau] = date;
     }
     if (!dry) await db.marquer(u.id, envoye);
   }
+  // Journaux publics (dépôt public) : uniquement des compteurs, jamais d'identifiant, de matière, d'examen ni de texte de rappel.
+  console.log(`${dry ? '[essai] ' : ''}${journal.length} rappel(s) préparé(s).`);
   return journal;
 }
 
