@@ -545,3 +545,8 @@ body.nuit #halos{opacity:.35}
 .choice.ok[aria-pressed="true"] .mk{background:var(--okS);border-color:var(--okS);color:#fff}
 .choice.ko[aria-pressed="true"]{border-color:var(--koS)}
 .choice.ko[aria-pressed="true"] .mk{background:var(--koS);border-color:var(--koS);color:#fff}
+
+/* 2.18 — priorité des notions */
+.chip.prio.p1{background:var(--ink);color:var(--bg)}
+.chip.prio.p3{opacity:.75}
+.chap .etape{display:block;margin-top:4px}

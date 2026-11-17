@@ -122,12 +122,42 @@ export function canClimb(p, now = Date.now()) {
  * 3. le reste (déjà vus, qui ne peuvent pas monter aujourd'hui : simple entraînement), les moins sûrs d'abord.
  * Un peu de hasard à priorité égale.
  */
+// ---- Priorité des notions : 1 socle, 2 approfondissement, 3 détail (champ `prio` des éléments).
+export const PRIO_NOMS = ['', 'Socle', 'Approfondissement', 'Détail'];
+export const SEUIL_DEBLOCAGE = 0.75;
+/** Une question est acquise quand sa dernière réponse est juste et qu'elle a passé la boîte 1. */
+export const acquise = (p) => !!p && !p.err && (p.box || 0) >= 2;
+/**
+ * Niveaux ouverts dans un chapitre : le socle d'abord ; les approfondissements quand 75 % des questions
+ * du socle sont acquises ; les détails quand 75 % des approfondissements le sont aussi.
+ */
+export function niveauxChapitre(items, prog) {
+  const part = (k) => {
+    const L = items.filter((it) => (it.prio || 1) === k);
+    return L.length ? L.filter((it) => acquise(prog[it.id])).length / L.length : 1;
+  };
+  const socle = part(1), appro = part(2);
+  const max = socle < SEUIL_DEBLOCAGE ? 1 : appro < SEUIL_DEBLOCAGE ? 2 : 3;
+  return { max, socle, appro, aAppro: items.some((it) => it.prio === 2), aDetail: items.some((it) => it.prio === 3) };
+}
+/** Garde les questions ouvertes ; une question déjà vue reste toujours disponible (ses révisions continuent). */
+export function filtrerOuvertes(items, prog, toutOuvrir = false, base = items) {
+  if (toutOuvrir) return items;
+  // Les niveaux se calculent sur tout le chapitre (base), pas seulement sur les types cochés.
+  const parChap = {};
+  for (const it of base) (parChap[it.chapitre] = parChap[it.chapitre] || []).push(it);
+  const max = {};
+  for (const [c, L] of Object.entries(parChap)) max[c] = niveauxChapitre(L, prog).max;
+  return items.filter((it) => (it.prio || 1) <= (max[it.chapitre] || 3) || prog[it.id]?.seen);
+}
+
 export function prioritize(items, prog, now = Date.now()) {
+  // À revoir aujourd'hui d'abord (le socle avant le reste), puis les nouvelles questions du socle, puis le reste.
   const score = (it) => {
-    const p = prog[it.id];
-    if (canClimb(p, now)) return p.box / 10;
-    if (!p || !p.box) return 1;
-    return 2 + p.box / 10 + (p.err ? -0.05 : 0);
+    const p = prog[it.id], k = (it.prio || 1) - 1;
+    if (canClimb(p, now)) return p.box / 10 + k * 0.2;
+    if (!p || !p.box) return 1 + k * 0.4;
+    return 2 + p.box / 10 + (p.err ? -0.05 : 0) + k * 0.2;
   };
   return items
     .map((it) => ({ it, s: score(it) + Math.random() * 0.05 }))

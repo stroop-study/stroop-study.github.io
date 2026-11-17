@@ -8,10 +8,10 @@ import {
   sendEmailVerification, signInWithEmailAndPassword, createUserWithEmailAndPassword, sendPasswordResetEmail, signOut
 } from './firebase.js';
 import * as S from './store.js';
-import { today, isDue, dueDate, nextState, mastery, notionStats, seenCount, prioritize, shuffle, streak, INTERVALS } from './leitner.js';
+import { today, isDue, dueDate, nextState, mastery, notionStats, seenCount, prioritize, shuffle, streak, INTERVALS, PRIO_NOMS, niveauxChapitre, filtrerOuvertes } from './leitner.js';
 import { TYPES, TYPE_KEYS, NIVEAUX, typeLabel, timeFor, formatOf, checkCourte, sameSet, resolveVariants, nbVariantes, normalize } from './types.js';
 
-const VERSION = '2.17.1';
+const VERSION = '2.18.0';
 const $app = document.getElementById('app');
 const $tab = document.getElementById('tabbar');
 const $halos = document.getElementById('halos');
@@ -504,7 +504,8 @@ function getCfg(code) {
     n: c.n ?? 20,
     niveau: c.niveau ?? 'tous',
     chrono: c.v >= 5 ? !!c.chrono : true,
-    reflechir: !!c.reflechir
+    reflechir: !!c.reflechir,
+    toutOuvrir: !!c.toutOuvrir
   };
 }
 const saveCfg = (code, cfg) => localStorage.setItem(CFG_KEY(code), JSON.stringify({ ...cfg, v: 6 }));
@@ -513,7 +514,7 @@ function cfgSummary(cfg) {
   const t = cfg.types.length === TYPE_KEYS.length ? 'tous les types' : plural(cfg.types.length, 'type');
   const n = cfg.n === 'tout' ? 'toutes les questions' : `${cfg.n} questions`;
   const niv = cfg.niveau === 'tous' ? 'tous niveaux' : NIVEAUX[cfg.niveau].toLowerCase();
-  return `${t} · ${n} · ${niv} · chrono ${cfg.chrono ? 'activé' : 'désactivé'}${cfg.reflechir ? ' · réfléchir d’abord' : ''}`;
+  return `${t} · ${n} · ${niv} · chrono ${cfg.chrono ? 'activé' : 'désactivé'}${cfg.reflechir ? ' · réfléchir d’abord' : ''}${cfg.toutOuvrir ? ' · tout débloqué' : ''}`;
 }
 
 const PARTIES = { CM: 'Cours magistraux', TD: 'Travaux dirigés', METHODE: 'Méthode' };
@@ -537,7 +538,7 @@ async function viewMatiere(code) {
     garderSel(code, st.sel);
     const cfg = getCfg(code);
     const dansSel = (it) => !st.sel.size || st.sel.has(it.chapitre); // rien de coché = toute la matière
-    const selItems = x.items.filter((it) => dansSel(it) && matchCfg(it, cfg));
+    const selItems = filtrerOuvertes(x.items.filter((it) => dansSel(it) && matchCfg(it, cfg)), x.prog, cfg.toutOuvrir, x.items);
     const errItems = x.items.filter((it) => dansSel(it) && x.prog[it.id]?.err && it.type !== 'flashcard');
     const flashItems = x.items.filter((it) => it.type === 'flashcard' && (!st.sel.size || st.sel.has(it.chapitre)));
     const flashDue = flashItems.filter((it) => { const p = x.prog[it.id]; return !p || !p.box || isDue(p); }).length;
@@ -565,11 +566,13 @@ async function viewMatiere(code) {
         ${chaps.map((c, ci) => {
           const partHead = c.partie && c.partie !== chaps[ci - 1]?.partie ? `<div class="partie-head"><span>${esc(PARTIES[c.partie] || c.partie)}</span><button class="flag-btn" data-partie="${esc(c.partie)}" style="color:var(--m-ink);font-weight:800">${chaps.filter((k) => k.partie === c.partie).every((k) => st.sel.has(k.id)) ? 'Tout décocher' : 'Tout cocher'}</button></div>` : '';
           const ids = c.elements.map((e) => e.id); const mm = mastery(c.elements, x.prog); const vus = seenCount(ids, x.prog);
+          const nv = niveauxChapitre(c.elements, x.prog), p100 = (v) => Math.round(v * 100);
+          const etape = !c.elements.some((e) => e.prio) ? '' : cfg.toutOuvrir ? 'Tout débloqué' : nv.max === 1 && nv.aAppro ? `Socle acquis à ${p100(nv.socle)} % · la suite à 75 %` : nv.max === 2 && nv.aDetail ? `Approfondissements acquis à ${p100(nv.appro)} % · les détails à 75 %` : nv.max === 1 ? `Socle acquis à ${p100(nv.socle)} %` : 'Tout débloqué';
           return `${partHead}<div class="chaprow">
             <button class="chap" data-chap="${esc(c.id)}" aria-pressed="${st.sel.has(c.id)}">
               <span class="box" aria-hidden="true"><svg class="ic" viewBox="0 0 24 24">${IC.check}</svg></span>
               <span class="info"><span class="between"><span class="name">${esc(c.titre)}</span><span class="small muted">${pct(mm)}</span></span>
-              <span class="bar duo"><span class="seen" style="width:${Math.round((vus / ids.length) * 100)}%"></span><span style="width:${mm}%"></span></span></span>
+              <span class="bar duo"><span class="seen" style="width:${Math.round((vus / ids.length) * 100)}%"></span><span style="width:${mm}%"></span></span>${etape ? `<span class="small muted etape">${esc(etape)}</span>` : ''}</span>
             </button>
             ${c.fiche?.length ? `<button class="icon-btn fiche-btn" data-fiche="${esc(c.id)}" aria-label="Fiche de cours : ${esc(c.titre)}">${ic('book')}</button>` : ''}
           </div>`;
@@ -822,7 +825,7 @@ function cfgSheet(m, x, st, onDone) {
   const pool = x.items.filter((it) => st.sel.size === 0 || st.sel.has(it.chapitre));
   const draw = () => {
     const counts = Object.fromEntries(TYPE_KEYS.map((k) => [k, pool.filter((it) => it.type === k && (cfg.niveau === 'tous' || (it.niveau || 1) === Number(cfg.niveau))).length]));
-    const total = pool.filter((it) => matchCfg(it, cfg)).length;
+    const total = filtrerOuvertes(pool.filter((it) => matchCfg(it, cfg)), x.prog, cfg.toutOuvrir, x.items).length;
     sh.back.querySelector('.sheet').innerHTML = `
       <div class="between"><h2>Réglages de session</h2><button class="icon-btn" data-close aria-label="Fermer">${ic('close')}</button></div>
       <div class="field">Types de questions
@@ -836,6 +839,7 @@ function cfgSheet(m, x, st, onDone) {
         <div class="seg">${[['tous', 'Tous'], ['1', 'Facile'], ['2', 'Moyen'], ['3', 'Difficile']].map(([k, l]) => `<button data-niv="${k}" aria-pressed="${String(cfg.niveau) === k}">${l}</button>`).join('')}</div>
       </div>
       <label class="switch"><input type="checkbox" id="chrono" ${cfg.chrono ? 'checked' : ''}><span><b>Chrono</b><span class="small muted" style="display:block">Temps adapté à la difficulté et à la longueur de chaque question (de 20 s à 3 min). Hors flashcards.</span></span></label>
+      <label class="switch"><input type="checkbox" id="tout" ${cfg.toutOuvrir ? 'checked' : ''}><span><b>Tout débloquer</b><span class="small muted" style="display:block">Par défaut, chaque chapitre propose d’abord son socle. Les approfondissements s’ajoutent quand 75 % du socle est acquis, puis les détails. Utile avant les partiels.</span></span></label>
       <label class="switch"><input type="checkbox" id="refl" ${cfg.reflechir ? 'checked' : ''}><span><b>Réfléchir avant de voir les propositions</b><span class="small muted" style="display:block">La question s’affiche seule : tu formules ta réponse, puis tu découvres les choix (QCU, QCM).</span></span></label>
       <p class="small muted" style="margin:0">${st.sel.size ? `Dans les chapitres cochés : ${plural(total, 'question disponible', 'questions disponibles')}.` : `Dans toute la matière : ${plural(total, 'question disponible', 'questions disponibles')}. Coche des chapitres pour affiner.`}</p>
       <button class="btn primary block" data-close>Enregistrer</button>`;
@@ -851,6 +855,7 @@ function cfgSheet(m, x, st, onDone) {
     q('[data-niv]').forEach((b) => b.onclick = () => { cfg.niveau = b.dataset.niv === 'tous' ? 'tous' : Number(b.dataset.niv); saveCfg(m.code, cfg); draw(); });
     sh.back.querySelector('#chrono').onchange = (e) => { cfg.chrono = e.target.checked; saveCfg(m.code, cfg); };
     sh.back.querySelector('#refl').onchange = (e) => { cfg.reflechir = e.target.checked; saveCfg(m.code, cfg); };
+    sh.back.querySelector('#tout').onchange = (e) => { cfg.toutOuvrir = e.target.checked; saveCfg(m.code, cfg); draw(); };
     q('[data-close]').forEach((b) => b.onclick = () => { sh.close(); onDone(); });
   };
   const sh = openSheet('', `c-${m.couleur}`);
@@ -1224,10 +1229,10 @@ async function startSession({ code, chapitres = null, kind = 'normal', ids = nul
   else if (kind === 'nuit') items = planNuit(items, prog);
   else if (ids) items = shuffle(items.filter((it) => ids.includes(it.id)));
   else if (kind === 'jour') items = prioritize(items.filter((it) => it.type !== 'flashcard' && isDue(prog[it.id])), prog).slice(0, 12);
-  else if (kind === 'flash') items = prioritize(items.filter((it) => it.type === 'flashcard'), prog).slice(0, 20);
+  else if (kind === 'flash') items = prioritize(filtrerOuvertes(items.filter((it) => it.type === 'flashcard'), prog, cfg.toutOuvrir, items), prog).slice(0, 20);
   else if (kind === 'erreurs') items = shuffle(items.filter((it) => prog[it.id]?.err && it.type !== 'flashcard'));
   else {
-    items = items.filter((it) => matchCfg(it, cfg));
+    items = filtrerOuvertes(items.filter((it) => matchCfg(it, cfg)), prog, cfg.toutOuvrir, items);
     if (kind === 'rafale') items = prioritize(items, prog);
     else items = prioritize(items, prog).slice(0, cfg.n === 'tout' ? items.length : cfg.n);
   }
@@ -1360,7 +1365,7 @@ async function viewSession() {
       <button class="icon-btn" id="pause" aria-label="Pause">${ic('pause')}</button>
       <span class="timer" id="tim">${total ? `${session.i + 1} / ${total}` : session.endsAt <= Date.now() ? 'Dernière !' : fmtTime(session.endsAt - Date.now())}</span>
     </div>
-    <div class="row" style="flex-wrap:wrap"><span class="chip m">${esc(m.code)} · ${esc(shortChap(it.chapitreTitre))}</span><span class="chip">${esc(typeLabel(it.type))}</span><span class="chip">${pBefore.box ? 'Boîte ' + pBefore.box : 'Nouveau'}</span>${autreSituation ? '<span class="chip">Autre situation</span>' : ''}${session.kind === 'rafale' ? `<span class="chip">${ic('bolt')} ${session.results.length}</span>` : ''}</div>
+    <div class="row" style="flex-wrap:wrap"><span class="chip m">${esc(m.code)} · ${esc(shortChap(it.chapitreTitre))}</span><span class="chip">${esc(typeLabel(it.type))}</span>${it.prio ? `<span class="chip prio p${it.prio}">${PRIO_NOMS[it.prio]}</span>` : ''}<span class="chip">${!pBefore.seen && !pBefore.box ? 'Nouvelle question' : pBefore.err ? 'Ratée la dernière fois' : isDue(pBefore) ? `À revoir aujourd’hui · boîte ${pBefore.box}` : `Entraînement · boîte ${pBefore.box}`}</span>${autreSituation ? '<span class="chip">Autre situation</span>' : ''}${session.kind === 'rafale' ? `<span class="chip">${ic('bolt')} ${session.results.length}</span>` : ''}</div>
     ${timed && !st.answered ? (() => { const left = st.deadline - Date.now(); return `<div class="qtimer" aria-hidden="true"><span id="qbar" class="${left < 5000 ? 'late' : ''}" style="width:${Math.max(0, (left / (timeFor(it) * 1000)) * 100)}%"></span></div>`; })() : ''}`;
 
   const ficheLink = () => {
