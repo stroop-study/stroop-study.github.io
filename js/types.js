@@ -28,6 +28,10 @@ export function timeFor(it) {
   else if (f === 'ordre') t += 5 * (it.items?.length || 0);
   else if (f === 'qcm') t += 10;
   if (it.type === 'cas') t += 10; // lire la situation avant la question
+  if (f === 'courte') t += 10; // taper la réponse
+  // Lire un tableau ou un graphique prend du temps : ≈ 0,6 s par case, 15 s par graphique.
+  const fig = it.figure;
+  if (fig) t += fig.type === 'tableau' ? 0.6 * (fig.lignes?.length || 0) * (fig.entetes?.length || 1) : 15;
   const txt = [it.scenario, it.question, it.affirmation, ...(it.choix || []), ...(it.items || []).map((x) => (Array.isArray(x) ? x[0] : x)), ...(it.paires || []).flat()]
     .filter((x) => typeof x === 'string').join(' ');
   t += Math.max(0, txt.length - 100) / 12; // ≈ temps de lecture (≈ 12 caractères/s, sans se presser)
