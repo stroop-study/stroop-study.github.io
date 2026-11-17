@@ -59,6 +59,8 @@ export async function loadUser(uid, displayName, email) {
   state.user.temps = state.user.temps || {};
   state.user.joursM = state.user.joursM || {};
   state.user.matieres = state.user.matieres || [];
+  // L'adresse sert à reconnaître les testeur·ses dans les statistiques de l'admin.
+  if (state.email && state.user.email !== state.email) { state.user.email = state.email; setDoc(userRef(), { email: state.email }, { merge: true }).catch(() => {}); }
   return state.user;
 }
 
@@ -260,6 +262,19 @@ export async function flagsInvites() {
     f.it = contenu ? flatItems(contenu).find((x) => x.id === f.item) || null : null;
   }
   return res.sort((a, b) => (b.date || 0) - (a.date || 0));
+}
+
+/** Admin : fiches et progression de tous les comptes (null si les règles ne le permettent pas encore). */
+export async function statsTesteurs() {
+  if (!state.isAdmin) return [];
+  let users;
+  try { users = await withTimeout(getDocs(collection(db, 'users')), 15000); } catch { return null; }
+  const res = [];
+  users.forEach((d) => res.push({ uid: d.id, moi: d.id === state.uid, ...d.data(), progres: {} }));
+  await Promise.all(res.map(async (u) => {
+    try { (await getDocs(collection(db, 'users', u.uid, 'progres'))).forEach((p) => { u.progres[p.id] = p.data().items || {}; }); } catch { /* ignoré */ }
+  }));
+  return res;
 }
 
 export async function retirerFlagInvite(sid) {

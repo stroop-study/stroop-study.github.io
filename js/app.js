@@ -11,7 +11,7 @@ import * as S from './store.js';
 import { today, isDue, dueDate, nextState, mastery, notionStats, seenCount, prioritize, shuffle, streak, INTERVALS } from './leitner.js';
 import { TYPES, TYPE_KEYS, NIVEAUX, typeLabel, timeFor, formatOf, checkCourte, sameSet, resolveVariants, nbVariantes, normalize } from './types.js';
 
-const VERSION = '2.16.0';
+const VERSION = '2.17.0';
 const $app = document.getElementById('app');
 const $tab = document.getElementById('tabbar');
 const $halos = document.getElementById('halos');
@@ -1923,9 +1923,48 @@ const PROFIL_SECTIONS = [
   { id: 'affichage', icon: 'sun', titre: 'Apparence et sons', sous: 'Thème, sons, volume' },
   { id: 'bibliotheque', icon: 'books', titre: 'Bibliothèque', sous: 'Contenus partagés' , admin: 'Importer du contenu, invité·es' },
   { id: 'signalements', icon: 'flag', titre: 'Signalements', sous: 'Questions à corriger' },
+  { id: 'testeurs', icon: 'chart', titre: 'Testeur·ses', sous: 'Statistiques des invité·es', adminSeul: true },
   { id: 'aide', icon: 'help', titre: 'Aide', sous: 'Leitner, maîtrise, version' },
   { id: 'donnees', icon: 'download', titre: 'Mes données', sous: 'Exporter' }
 ];
+
+// ---- Statistiques des testeur·ses (admin) : par personne, puis par question, tous comptes confondus.
+const duree = (s) => { const m = Math.round((s || 0) / 60); return m < 60 ? `${m} min` : `${Math.floor(m / 60)} h ${String(m % 60).padStart(2, '0')}`; };
+const somme = (o) => Object.values(o || {}).reduce((a, b) => a + (Number(b) || 0), 0);
+function dateCourte(j) { if (!j) return '—'; const [a, m, d] = j.split('-').map(Number); const n = Math.round((new Date(today()) - new Date(a, m - 1, d)) / 864e5); return n <= 0 ? 'aujourd’hui' : n === 1 ? 'hier' : `il y a ${n} j`; }
+async function testeursHtml(stats) {
+  if (stats === null) return `<div class="card" style="padding:16px;display:flex;flex-direction:column;gap:12px"><p class="muted small" style="margin:0">Pour voir les statistiques, mets à jour les règles Firebase une fois : copie-les, colle-les dans Firebase (<b>Firestore → Règles</b>) et clique sur <b>Publier</b>.</p><button class="btn plain block" id="copyrules">${ic('copy')}Copier les règles</button></div>`;
+  const pers = stats.map((u) => {
+    let vus = 0, ok = 0; const mats = [];
+    for (const [code, items] of Object.entries(u.progres)) { let n = 0; for (const p of Object.values(items)) { vus += p.seen || 0; ok += p.ok || 0; n += p.seen || 0; } if (n) mats.push(code); }
+    const jours = Object.keys(u.jours || {}).filter((j) => u.jours[j] > 0).sort();
+    return { nom: u.moi ? `${u.prenom || 'Toi'} (toi)` : u.prenom || u.email || 'Sans prénom', email: u.email || '', moi: u.moi, vus, ok, mats, actifs: jours.length, dernier: jours[jours.length - 1] || '', temps: somme(u.temps) };
+  }).sort((a, b) => (b.dernier || '').localeCompare(a.dernier || '') || b.vus - a.vus);
+  const autres = pers.filter((p) => !p.moi);
+  const il7 = today(new Date(Date.now() - 6 * 864e5));
+  const actifs7 = autres.filter((p) => p.dernier && p.dernier >= il7).length;
+  // Par question : toutes les réponses, tous comptes confondus (anonyme).
+  const parQ = {}, parM = {};
+  for (const u of stats) for (const [code, items] of Object.entries(u.progres)) for (const [id, p] of Object.entries(items)) {
+    if (!p.seen) continue;
+    const q = (parQ[code + '|' + id] = parQ[code + '|' + id] || { code, id, pers: 0, seen: 0, ko: 0 }); q.pers++; q.seen += p.seen || 0; q.ko += p.ko || 0;
+    const m = (parM[code] = parM[code] || { seen: 0, ok: 0, pers: new Set() }); m.seen += p.seen || 0; m.ok += p.ok || 0; m.pers.add(u.uid);
+  }
+  const labels = {};
+  for (const code of new Set(Object.values(parQ).map((q) => q.code))) { const c = await S.getContenu(code); if (c) for (const it of S.flatItems(c)) labels[code + '|' + it.id] = it; }
+  const ratees = Object.values(parQ).filter((q) => q.pers >= 2 && q.seen >= 3 && labels[q.code + '|' + q.id]).map((q) => ({ ...q, taux: q.ko / q.seen })).sort((a, b) => b.taux - a.taux || b.seen - a.seen).slice(0, 15);
+  const pc = (x) => `${Math.round(x * 100)} %`;
+  const card = (h) => `<div class="card" style="padding:16px;display:flex;flex-direction:column;gap:12px">${h}</div>`;
+  return card(`<h2 class="section-title">Vue d’ensemble</h2>
+      <div class="between"><span class="small">Testeur·ses inscrit·es</span><b>${autres.length}</b></div>
+      <div class="between"><span class="small">Actif·ves ces 7 derniers jours</span><b>${actifs7}</b></div>
+      <div class="between"><span class="small">Réponses données (hors toi)</span><b>${autres.reduce((a, p) => a + p.vus, 0)}</b></div>
+      <div class="between"><span class="small">Temps passé (hors toi)</span><b>${duree(autres.reduce((a, p) => a + p.temps, 0))}</b></div>`)
+    + card(`<h2 class="section-title">Par personne</h2>${pers.length ? `<div class="list">${pers.map((p) => `<div style="display:flex;flex-direction:column;gap:2px;padding:8px 0;border-bottom:1px solid var(--line)"><div class="between"><b class="small">${esc(p.nom)}</b><span class="small muted">${esc(dateCourte(p.dernier))}</span></div><span class="small muted">${p.actifs} jour${p.actifs > 1 ? 's' : ''} · ${duree(p.temps)} · ${p.vus} réponse${p.vus > 1 ? 's' : ''}${p.vus ? ` · ${pc(p.ok / p.vus)} de réussite` : ''}</span>${p.mats.length ? `<span class="small muted">${esc(p.mats.join(', '))}</span>` : ''}${p.email && !p.moi ? `<span class="small muted" style="overflow:hidden;text-overflow:ellipsis">${esc(p.email)}</span>` : ''}</div>`).join('')}</div>` : '<p class="muted small" style="margin:0">Personne pour l’instant.</p>'}
+      <p class="muted small" style="margin:0">Les comptes créés avant la version 2.17 n’affichent leur adresse qu’après leur prochaine ouverture de l’appli.</p>`)
+    + card(`<h2 class="section-title">Par matière</h2>${Object.keys(parM).length ? Object.entries(parM).sort().map(([code, m]) => `<div class="between"><span class="small"><b>${esc(code)}</b> · ${m.pers.size} personne${m.pers.size > 1 ? 's' : ''}</span><span class="small">${m.seen} rép. · ${pc(m.ok / m.seen)}</span></div>`).join('') : '<p class="muted small" style="margin:0">Aucune réponse pour l’instant.</p>'}`)
+    + card(`<h2 class="section-title">Questions les plus ratées</h2><p class="muted small" style="margin:0">Tous les comptes, toi comprise ; questions vues par au moins 2 personnes. Une question très ratée est souvent mal posée.</p>${ratees.length ? `<div class="list">${ratees.map((q) => `<div style="display:flex;flex-direction:column;gap:2px;padding:8px 0;border-bottom:1px solid var(--line)"><div class="between"><b class="small">${esc(q.code)} · ${esc(q.id)}</b><b class="small" style="color:var(--koS)">${pc(q.taux)} d’erreurs</b></div><span class="small muted">${esc(itemLabel(labels[q.code + '|' + q.id]).slice(0, 140))}</span><span class="small muted">${q.pers} personnes · ${q.seen} réponses</span></div>`).join('')}</div>` : '<p class="muted small" style="margin:0">Pas encore assez de réponses.</p>'}`);
+}
 
 function versionsHtml() {
   const L = S.contenusImportes();
@@ -1941,6 +1980,7 @@ async function viewProfil(section) {
   const theme = localStorage.getItem('theme') || 'auto';
   const flags = await S.allFlags();
   const flagsInv = S.isAdmin() ? await S.flagsInvites() : [];
+  const testeurs = section === 'testeurs' && S.isAdmin() ? await testeursHtml(await S.statsTesteurs()) : '';
   const card = (html) => `<div class="card" style="padding:16px;display:flex;flex-direction:column;gap:12px">${html}</div>`;
   const etatRappels = { actif: 'Activés', inactif: 'Désactivés', bientot: 'Bientôt', installer: 'À installer', impossible: 'Indisponibles', refuse: 'Bloqués' }[N.etat()];
   const badge = { rappels: etatRappels, signalements: (flags.length + (flagsInv?.length || 0)) ? String(flags.length + (flagsInv?.length || 0)) : '', affichage: getSons().on ? '' : 'Sons coupés' };
@@ -1980,9 +2020,10 @@ async function viewProfil(section) {
       <button class="card cfg-card" id="tutoP"><span><b>Comment fonctionne la boîte de Leitner ?</b><span class="small muted" style="display:block">Le petit tuto des 5 boîtes</span></span>${ic('next')}</button>
       ${card(`<b>Et la maîtrise ?</b><p class="muted small" style="margin:0">Dans chaque matière, touche le cercle de maîtrise pour voir comment elle se calcule et la liste de tes notions.</p>`)}
       <p class="muted small" style="margin:0;text-align:center">Stroop Study · version ${VERSION}</p>`,
+    testeurs: testeurs,
     donnees: card(`<p class="muted small" style="margin:0">Télécharge une copie de ta progression et de tes réglages (fichier .json).</p><button class="btn plain block" id="export">${ic('download')}Exporter mes données</button>`)
   };
-  const sec = PROFIL_SECTIONS.find((x) => x.id === section);
+  const sec = PROFIL_SECTIONS.find((x) => x.id === section && (!x.adminSeul || S.isAdmin()));
   if (sec) {
     $app.innerHTML = `<div class="row" style="gap:12px"><a class="icon-btn" href="#/profil" aria-label="Retour">${ic('back')}</a><h1 style="margin:0">${esc(sec.titre)}</h1></div>${SEC[sec.id]}`;
   } else {
@@ -1992,7 +2033,7 @@ async function viewProfil(section) {
         <span class="avatar">${esc(initiale)}</span>
         <span style="flex:1;min-width:0"><b style="font-size:18px">${esc(u.prenom || 'Toi')}</b><span class="small muted" style="display:block;overflow:hidden;text-overflow:ellipsis">${esc(u.semestre || '')} · ${esc(auth.currentUser?.email || '')}</span></span>
       </div>
-      <div class="card menu">${PROFIL_SECTIONS.map((x) => `<a class="menu-row" href="#/profil/${x.id}"><span class="menu-ic">${ic(x.icon)}</span><span class="menu-txt"><b>${esc(x.titre)}</b><span class="small muted">${esc(S.isAdmin() && x.admin ? x.admin : x.sous)}</span></span>${badge[x.id] ? `<span class="menu-badge">${esc(badge[x.id])}</span>` : ''}${ic('next')}</a>`).join('')}</div>
+      <div class="card menu">${PROFIL_SECTIONS.filter((x) => !x.adminSeul || S.isAdmin()).map((x) => `<a class="menu-row" href="#/profil/${x.id}"><span class="menu-ic">${ic(x.icon)}</span><span class="menu-txt"><b>${esc(x.titre)}</b><span class="small muted">${esc(S.isAdmin() && x.admin ? x.admin : x.sous)}</span></span>${badge[x.id] ? `<span class="menu-badge">${esc(badge[x.id])}</span>` : ''}${ic('next')}</a>`).join('')}</div>
       <p class="muted small" style="margin:0;text-align:center">version ${VERSION}</p>`;
     return;
   }

@@ -11,9 +11,11 @@ service cloud.firestore {
         && request.auth.token.email.lower() in get(/databases/$(database)/documents/config/acces).data.membres);
     }
 
-    // Progression et réglages : chaque personne ne voit que les siens.
+    // Progression et réglages : chaque personne ne voit et ne modifie que les siens.
+    // L'admin peut les lire (statistiques des testeur·ses, annoncées aux invité·es), jamais les modifier.
     match /users/{userId}/{document=**} {
-      allow read, write: if connecte() && request.auth.uid == userId;
+      allow read: if (connecte() && request.auth.uid == userId) || admin();
+      allow write: if connecte() && request.auth.uid == userId;
     }
     // Bibliothèque commune : l'admin écrit, les invités lisent.
     match /bibliotheque/{code} {
