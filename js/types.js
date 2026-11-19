@@ -20,6 +20,7 @@ export const NIVEAUX = { 1: 'Facile', 2: 'Moyen', 3: 'Difficile' };
 /** Temps de réponse (secondes) : 20 / 40 / 60 s selon la difficulté, plus du temps
  *  selon la forme (paires, éléments à classer) et la longueur du texte à lire. */
 export function timeFor(it) {
+  if (it.temps > 0) return it.temps; // temps fixé dans le contenu (ex. calcul de tête)
   const n = it.niveau || 1;
   let t = n >= 3 ? 60 : n === 2 ? 40 : 20;
   const f = formatOf(it);
