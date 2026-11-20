@@ -11,7 +11,7 @@ import * as S from './store.js';
 import { today, isDue, dueDate, nextState, mastery, notionStats, seenCount, prioritize, shuffle, streak, INTERVALS, PRIO_NOMS, niveauxChapitre, filtrerOuvertes } from './leitner.js';
 import { TYPES, TYPE_KEYS, NIVEAUX, typeLabel, timeFor, formatOf, checkCourte, sameSet, resolveVariants, nbVariantes, normalize } from './types.js';
 
-const VERSION = '2.18.1';
+const VERSION = '2.18.2';
 const $app = document.getElementById('app');
 const $tab = document.getElementById('tabbar');
 const $halos = document.getElementById('halos');
@@ -1195,7 +1195,7 @@ function laboEcoute() {
       if (v.multi) nbLoc = r.nbLocuteurs;
       try { if (navigator.audioSession) navigator.audioSession.type = 'playback'; } catch {}
       audio?.pause(); audio = new Audio(URL.createObjectURL(r.blob));
-      audio.onended = () => { try { if (navigator.audioSession) navigator.audioSession.type = 'ambient'; } catch {} };
+      audio.onended = () => sessionAudio();
       await audio.play();
       etat(`${v.nom}${v.multi ? ` n° ${pnum}` : ''} : ${r.secondes.toFixed(1)} s de parole, prêtes en ${((t1 - t0) / 1000).toFixed(1)} s.`);
       dessinerVoix();
@@ -1998,8 +1998,8 @@ async function viewProfil(section) {
     affichage: card(`<div class="field">Apparence<div class="seg" role="group">${[['auto', 'Auto'], ['clair', 'Clair'], ['sombre', 'Sombre']].map(([k, l]) => `<button data-th="${k}" aria-pressed="${theme === k}">${l}</button>`).join('')}</div></div>`) + card(`
       <div class="between"><h2 class="section-title">Sons</h2><label class="tgl"><input type="checkbox" id="sonOn" ${getSons().on ? 'checked' : ''}><span></span><b class="sr">Activer les sons</b></label></div>
       <div class="row" style="gap:12px;${getSons().on ? '' : 'opacity:.5'}"><span class="small muted">Volume</span><input type="range" id="sonVol" min="0" max="100" step="5" value="${Math.round(getSons().vol * 100)}" style="flex:1"><button class="flag-btn" id="sonTest">Écouter</button></div>
-      <label class="switch" style="${getSons().on ? '' : 'opacity:.5'}"><input type="checkbox" id="sonSil" ${getSons().silencieux ? 'checked' : ''}><span><b>Même en mode silencieux</b><span class="small muted" style="display:block">Sur iPhone, les sons passent même quand le téléphone est en silencieux (la musique en cours baisse un instant).</span></span></label>
-      <p class="muted small" style="margin:0">Sur iPhone, les sons suivent le bouton silencieux.</p>`),
+      <label class="switch" style="${getSons().on ? '' : 'opacity:.5'}"><input type="checkbox" id="sonSil" ${getSons().silencieux ? 'checked' : ''}><span><b>Même en mode silencieux</b><span class="small muted" style="display:block">Sur iPhone, les sons passent même quand le téléphone est en silencieux. Contrepartie imposée par iOS : la musique d’une autre appli (Spotify…) se met en pause au premier son. Désactive l’option si tu révises en musique.</span></span></label>
+      `),
     bibliotheque: S.isAdmin() ? card(`
       <h2 class="section-title">Importer du contenu</h2>
       <p class="muted small" style="margin:0">Dépose les fichiers .json que Claude t’a préparés. Si une matière existe déjà, son contenu est remplacé et la progression de chacun·e est conservée.</p>

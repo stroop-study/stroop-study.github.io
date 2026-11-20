@@ -9,14 +9,21 @@ export function getSons() {
 }
 export function setSons(patch) { localStorage.setItem(KEY, JSON.stringify({ ...getSons(), ...patch })); }
 
-// Session audio iOS (Safari 16.4+) : « transient » = sons courts qui passent même en mode silencieux,
-// en baissant brièvement la musique en cours ; « ambient » = respecte le bouton silencieux.
+// Session audio iOS (Safari 16.4+). Seul « playback » ignore le bouton silencieux : « transient » et
+// « ambient » le respectent tous les deux (WebKit les range dans la catégorie AmbientSound).
+// Contrepartie de « playback » : iOS met en pause la musique d'une autre appli au premier son.
+const typeVoulu = () => (getSons().silencieux ? 'playback' : 'ambient');
 export function sessionAudio() {
-  try { if (navigator.audioSession) navigator.audioSession.type = getSons().silencieux ? 'transient' : 'ambient'; } catch {}
+  try {
+    if (!navigator.audioSession || navigator.audioSession.type === typeVoulu()) return;
+    navigator.audioSession.type = typeVoulu();
+    // Le contexte Web Audio garde la catégorie qu'il avait à sa création : on le recrée au prochain son.
+    if (ctx) { ctx.close().catch(() => {}); ctx = null; }
+  } catch {}
 }
 function audio() {
+  sessionAudio();
   if (!ctx) {
-    sessionAudio();
     const AC = window.AudioContext || window.webkitAudioContext;
     if (!AC) return null;
     ctx = new AC();
