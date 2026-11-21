@@ -550,3 +550,9 @@ body.nuit #halos{opacity:.35}
 .chip.prio.p1{background:var(--ink);color:var(--bg)}
 .chip.prio.p3{opacity:.75}
 .chap .etape{display:block;margin-top:4px}
+
+/* Choix du nombre de cartes d'une boîte : bien visible */
+.boxn-f b{font-size:18px}
+.seg.boxn{padding:6px;gap:6px}
+.seg.boxn button{min-height:56px;font-size:20px}
+.seg.boxn button[data-bn="tout"]{font-size:15px;line-height:1.15}

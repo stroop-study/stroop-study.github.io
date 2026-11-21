@@ -11,7 +11,7 @@ import * as S from './store.js';
 import { today, isDue, dueDate, nextState, mastery, notionStats, seenCount, prioritize, shuffle, streak, INTERVALS, PRIO_NOMS, niveauxChapitre, filtrerOuvertes } from './leitner.js';
 import { TYPES, TYPE_KEYS, NIVEAUX, typeLabel, timeFor, formatOf, checkCourte, sameSet, resolveVariants, nbVariantes, normalize } from './types.js';
 
-const VERSION = '2.18.4';
+const VERSION = '2.18.5';
 const $app = document.getElementById('app');
 const $tab = document.getElementById('tabbar');
 const $halos = document.getElementById('halos');
@@ -767,7 +767,7 @@ function boxSheet(m, x, b) {
   const sh = openSheet(`
     <div class="between"><h2>${b ? `Boîte ${b}` : 'Cartes jamais vues'} · ${its.length}</h2><button class="icon-btn" data-close aria-label="Fermer">${ic('close')}</button></div>
     <p class="small muted" style="margin:0">${b ? `Une carte de la boîte ${b} revient ${INTERVALS[b] === 1 ? 'le lendemain' : INTERVALS[b] + ' jours'} après sa dernière montée.` : 'Ces cartes n’ont encore jamais été vues.'}</p>
-    ${its.length > 10 ? `<div class="field">Combien de cartes ?<div class="seg" id="boxn">${choixN.map((n) => `<button data-bn="${n}" aria-pressed="${String(nb) === String(n)}">${n === 'tout' ? `Toutes (${its.length})` : n}</button>`).join('')}</div></div>` : ''}
+    ${its.length > 10 ? `<div class="field boxn-f"><b>Combien de cartes veux-tu revoir ?</b><div class="seg boxn" id="boxn">${choixN.map((n) => `<button data-bn="${n}" aria-pressed="${String(nb) === String(n)}">${n === 'tout' ? `Toutes (${its.length})` : n}</button>`).join('')}</div></div>` : ''}
     ${its.length ? `<button class="btn primary block" id="revbox"></button>` : ''}
     <div class="list">${its.slice(0, 200).map(({ it, due }) => `<div class="card boxitem"><span class="small muted">${esc(shortChap(it.chapitreTitre))} · ${esc(typeLabel(it.type))}</span><span class="bt">${esc(itemLabel(it))}</span>${b ? `<span class="small ${isDue(x.prog[it.id]) ? 'due' : 'muted'}">${isDue(x.prog[it.id]) ? 'À revoir maintenant' : 'Prochaine révision ' + fmtDue(due)}</span>` : ''}</div>`).join('') || '<p class="muted small">Aucune carte ici pour l’instant.</p>'}</div>`, `c-${m.couleur}`);
   const combien = () => (nb === 'tout' || its.length <= 10 ? its.length : Math.min(nb, its.length));
