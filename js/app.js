@@ -11,7 +11,7 @@ import * as S from './store.js';
 import { today, isDue, dueDate, nextState, mastery, notionStats, seenCount, prioritize, shuffle, streak, INTERVALS, PRIO_NOMS, niveauxChapitre, filtrerOuvertes } from './leitner.js';
 import { TYPES, TYPE_KEYS, NIVEAUX, typeLabel, timeFor, formatOf, checkCourte, sameSet, resolveVariants, nbVariantes, normalize } from './types.js';
 
-const VERSION = '2.18.3';
+const VERSION = '2.18.4';
 const $app = document.getElementById('app');
 const $tab = document.getElementById('tabbar');
 const $halos = document.getElementById('halos');
@@ -761,12 +761,28 @@ function boxSheet(m, x, b) {
   const its = x.items.filter((it) => (x.prog[it.id]?.box || 0) === b)
     .map((it) => ({ it, due: b ? dueDate(x.prog[it.id]) : 0 }))
     .sort((a, c) => a.due - c.due);
+  const choixN = [10, 20, 30].filter((n) => n < its.length).concat('tout');
+  let nb = localStorage.getItem('stroop-boxn') || '20'; nb = nb === 'tout' ? 'tout' : Number(nb);
+  if (nb !== 'tout' && !choixN.includes(nb)) nb = choixN.filter((n) => n !== 'tout').pop() || 'tout';
   const sh = openSheet(`
     <div class="between"><h2>${b ? `Boîte ${b}` : 'Cartes jamais vues'} · ${its.length}</h2><button class="icon-btn" data-close aria-label="Fermer">${ic('close')}</button></div>
     <p class="small muted" style="margin:0">${b ? `Une carte de la boîte ${b} revient ${INTERVALS[b] === 1 ? 'le lendemain' : INTERVALS[b] + ' jours'} après sa dernière montée.` : 'Ces cartes n’ont encore jamais été vues.'}</p>
-    ${its.length ? `<button class="btn primary block" id="revbox">Réviser ces ${plural(its.length, 'carte')}</button>` : ''}
+    ${its.length > 10 ? `<div class="field">Combien de cartes ?<div class="seg" id="boxn">${choixN.map((n) => `<button data-bn="${n}" aria-pressed="${String(nb) === String(n)}">${n === 'tout' ? `Toutes (${its.length})` : n}</button>`).join('')}</div></div>` : ''}
+    ${its.length ? `<button class="btn primary block" id="revbox"></button>` : ''}
     <div class="list">${its.slice(0, 200).map(({ it, due }) => `<div class="card boxitem"><span class="small muted">${esc(shortChap(it.chapitreTitre))} · ${esc(typeLabel(it.type))}</span><span class="bt">${esc(itemLabel(it))}</span>${b ? `<span class="small ${isDue(x.prog[it.id]) ? 'due' : 'muted'}">${isDue(x.prog[it.id]) ? 'À revoir maintenant' : 'Prochaine révision ' + fmtDue(due)}</span>` : ''}</div>`).join('') || '<p class="muted small">Aucune carte ici pour l’instant.</p>'}</div>`, `c-${m.couleur}`);
-  sh.back.querySelector('#revbox')?.addEventListener('click', () => { sh.close(); startSession({ code: m.code, kind: 'normal', ids: its.map((o) => o.it.id) }); });
+  const combien = () => (nb === 'tout' || its.length <= 10 ? its.length : Math.min(nb, its.length));
+  const lib = () => { const r = sh.back.querySelector('#revbox'); if (r) r.textContent = combien() === its.length && its.length > 1 ? `Réviser les ${plural(its.length, 'carte')}` : `Réviser ${plural(combien(), 'carte')}`; };
+  lib();
+  sh.back.querySelectorAll('[data-bn]').forEach((btn) => btn.onclick = () => {
+    nb = btn.dataset.bn === 'tout' ? 'tout' : Number(btn.dataset.bn); localStorage.setItem('stroop-boxn', String(nb));
+    sh.back.querySelectorAll('[data-bn]').forEach((o) => o.setAttribute('aria-pressed', String(o === btn))); son('check'); lib();
+  });
+  // Les cartes les plus en retard d'abord ; pour les jamais vues, un tirage au hasard.
+  sh.back.querySelector('#revbox')?.addEventListener('click', () => {
+    sh.close();
+    const ordre = b ? its : shuffle(its.slice());
+    startSession({ code: m.code, kind: 'normal', ids: ordre.slice(0, combien()).map((o) => o.it.id) });
+  });
 }
 
 function leitnerTuto(m) {
