@@ -14,7 +14,7 @@ const DEFAULT_MATIERES = [
   { code: 'PAT1', nom: 'Psychopathologie', couleur: 'vert' }
 ].map((m, i) => ({ ...m, ordre: i, semestre: 'L1-S1', examens: [], modalites: [], negatif: false }));
 
-const state = { uid: null, email: '', user: null, contenu: {}, progres: {}, touches: {}, isAdmin: false, acces: null, libOk: false };
+const state = { uid: null, email: '', user: null, contenu: {}, progres: {}, revise: {}, touches: {}, isAdmin: false, acces: null, libOk: false };
 
 // Lecture rapide : on demande au serveur, mais s'il traîne (métro, amphi), on prend la copie locale de
 // Firestore au bout de 2,5 s ; la réponse du serveur, quand elle arrive, est passée à `plusTard`.
@@ -198,9 +198,26 @@ export async function getProgres(code) {
     // Réponses venues d'un autre appareil : on les prend, sauf pour les cartes revues ici entre-temps.
     const items = (s.exists() && s.data().items) || {}, p = state.progres[code];
     if (p) for (const id in items) if (!touche.has(id)) p[id] = items[id];
+    const r = (s.exists() && s.data().revise) || {}, rv = (state.revise[code] = state.revise[code] || {});
+    for (const k in r) if (!touche.has('rev:' + k)) rv[k] = r[k];
   });
   state.progres[code] = (snap.exists() && snap.data().items) || {};
+  state.revise[code] = { ...((snap.exists() && snap.data().revise) || {}), ...(state.revise[code] || {}) };
   return state.progres[code];
+}
+
+/** Notions cochées « révisée » dans l'onglet Réviser : clé `chapitre|notion` → true. */
+export async function getRevise(code) {
+  await getProgres(code);
+  return state.revise[code] || (state.revise[code] = {});
+}
+export const cleNotion = (chap, notion) => `${chap}|${notion}`;
+export async function setRevise(code, cles, val) {
+  const r = await getRevise(code);
+  const patch = {};
+  const touche = (state.touches[code] = state.touches[code] || new Set());
+  for (const k of cles) { r[k] = !!val; patch[k] = !!val; touche.add('rev:' + k); }
+  setDoc(progresRef(code), { revise: patch }, { merge: true }).catch(console.error);
 }
 
 /** Ajoute du temps de révision (en secondes) à la journée. */

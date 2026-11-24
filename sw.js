@@ -1,6 +1,6 @@
 // Service worker : met l'appli en cache pour qu'elle s'ouvre même sans réseau.
 // Les données (cartes, progression) sont gérées hors ligne par Firestore, pas ici.
-const VERSION = 'v2.18.6';
+const VERSION = 'v2.19.0';
 const CACHE = `stroop-${VERSION}`;
 // Moteur de voix (gros fichiers qui ne changent pas) : cache séparé, gardé d'une version à l'autre.
 const VENDOR = 'vendor-piper-1';
@@ -10,7 +10,7 @@ const FB_FILES = ['vendor/firebase/firebase-app.js', 'vendor/firebase/firebase-a
   'vendor/fonts/fonts.css', ...[1, 2, 3, 4, 5, 6, 7].map((i) => `vendor/fonts/f${i}.woff2`)];
 const SHELL = [
   './', 'index.html', 'manifest.webmanifest', 'css/app.css',
-  'js/app.js', 'js/store.js', 'js/leitner.js', 'js/types.js', 'js/recherche.js', 'js/voix.js', 'js/ecoute.js', 'js/figures.js', 'js/sons.js', 'js/notifs.js', 'js/firebase.js', 'js/firebase-config.js'
+  'js/app.js', 'js/store.js', 'js/leitner.js', 'js/types.js', 'js/recherche.js', 'js/voix.js', 'js/ecoute.js', 'js/figures.js', 'js/fiches.js', 'js/sons.js', 'js/notifs.js', 'js/firebase.js', 'js/firebase-config.js'
 ];
 // Images et icônes : cache séparé, gardé d'une version à l'autre (changer son nom si une image change).
 const ASSETS = 'assets-2';

@@ -3,6 +3,7 @@ import { figureHtml } from './figures.js';
 import { son, getSons, setSons, setSilence, sessionAudio } from './sons.js';
 import * as R from './recherche.js';
 import * as N from './notifs.js';
+import { pageHtml, pageDeNotion, titreSurligne } from './fiches.js';
 import {
   auth, onAuthStateChanged, GoogleAuthProvider, signInWithPopup, signInWithRedirect, getRedirectResult,
   sendEmailVerification, signInWithEmailAndPassword, createUserWithEmailAndPassword, sendPasswordResetEmail, signOut
@@ -11,7 +12,7 @@ import * as S from './store.js';
 import { today, isDue, dueDate, nextState, mastery, notionStats, seenCount, prioritize, shuffle, streak, INTERVALS, PRIO_NOMS, niveauxChapitre, filtrerOuvertes } from './leitner.js';
 import { TYPES, TYPE_KEYS, NIVEAUX, typeLabel, timeFor, formatOf, checkCourte, sameSet, resolveVariants, nbVariantes, normalize } from './types.js';
 
-const VERSION = '2.18.6';
+const VERSION = '2.19.0';
 const $app = document.getElementById('app');
 const $tab = document.getElementById('tabbar');
 const $halos = document.getElementById('halos');
@@ -51,7 +52,9 @@ const IC = {
   casque: '<path d="M4 15v-3a8 8 0 0 1 16 0v3"/><rect x="3" y="14" width="4" height="6" rx="1.5"/><rect x="17" y="14" width="4" height="6" rx="1.5"/>',
   cards: '<path d="M8 4h11v14H8zM5 7v13h11"/>',
   search: '<path d="M10.5 18a7.5 7.5 0 1 0 0-15 7.5 7.5 0 0 0 0 15zM16 16l5 5"/>',
-  moon: '<path d="M20 14.5A8 8 0 0 1 9.5 4 8 8 0 1 0 20 14.5z"/>'
+  moon: '<path d="M20 14.5A8 8 0 0 1 9.5 4 8 8 0 1 0 20 14.5z"/>',
+  quiz: '<path d="M5 4h14a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-8l-5 4v-4H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z"/><path d="M9.6 8.4a2.4 2.4 0 0 1 4.8 0c0 1.6-2.4 1.9-2.4 3.4M12 14.4v.1"/>',
+  down: '<path d="M6 9l6 6 6-6"/>'
 };
 const ic = (n, cls = 'ic') => `<svg class="${cls}" viewBox="0 0 24 24" aria-hidden="true">${IC[n]}</svg>`;
 const STROOP = { dodo: 'stroop-dodo', contente: 'stroop-contente', sport: 'stroop-sport', fete: 'stroop-fete', etude: 'stroop-etude', arcenciel: 'stroop-arcenciel' };
@@ -144,7 +147,7 @@ applyTheme();
 
 /* ================= Navigation ================= */
 function tabbar(active) {
-  const tabs = [['#/', 'home', 'Accueil'], ['#/matieres', 'book', 'Matières'], ['#/progres', 'chart', 'Progrès'], ['#/profil', 'user', 'Profil']];
+  const tabs = [['#/', 'home', 'Accueil'], ['#/reviser', 'book', 'Réviser'], ['#/matieres', 'quiz', 'S’entraîner'], ['#/progres', 'chart', 'Progrès'], ['#/profil', 'user', 'Profil']];
   $tab.innerHTML = tabs.map(([h, i, l]) => `<a href="${h}" ${active === h ? 'aria-current="page"' : ''}>${ic(i)}<span>${l}</span></a>`).join('');
   $tab.hidden = false; $app.classList.remove('no-tab');
 }
@@ -155,9 +158,12 @@ function go(hash) { if (location.hash === hash) route(); else location.hash = ha
 async function route() {
   if (!currentUser) return;
   const h = location.hash || '#/';
-  const [, page, arg] = h.split('/');
+  const [, page, arg, arg2, arg3] = h.split('/');
   window.scrollTo(0, 0);
   try {
+    if (page === 'reviser' && arg) return await viewRevMatiere(decodeURIComponent(arg), arg2 ? decodeURIComponent(arg2) : null);
+    if (page === 'reviser') return await viewReviser();
+    if (page === 'fiche' && arg && arg2) return await viewFiche(decodeURIComponent(arg), decodeURIComponent(arg2), Number(arg3) || 0);
     if (page === 'matiere' && arg) return await viewMatiere(decodeURIComponent(arg));
     if (page === 'matieres') return await viewMatieres();
     if (page === 'recherche') return viewRecherche(arg ? decodeURIComponent(arg) : null);
@@ -434,6 +440,7 @@ async function viewHome() {
   ${saved ? `<button class="cta" id="resume"><span><span class="t">Reprendre ma session</span><span class="s">${esc(saved.code)} · ${saved.results?.length || saved.i}/${saved.ids.length} · là où tu t’étais arrêté·e</span></span><span class="go">${ic('arrow')}</span></button>` : ''}
   ${best || !S.isAdmin() ?  (best ? `<button class="cta cta-m c-${best.m.couleur}" id="daily" ${todo ? '' : 'disabled'}><span><span class="t">Session du jour</span><span class="s">${todo ? `${esc(best.m.code)} · ${plural(todo, 'carte')} · environ ${Math.max(2, Math.round(todo / 2))} min` : 'Rien à revoir pour l’instant'}</span></span><span class="go">${ic('arrow')}</span></button>` : '') : `<a class="cta" href="#/profil/bibliotheque"><span><span class="t">Importer du contenu</span><span class="s">Ajoute ton premier fichier de révisions</span></span><span class="go">${ic('arrow')}</span></a>`}
   ${estSoir() && avecContenu.some((x) => x.flashTot) ? `<button class="card nuit-card" id="nuit"><span class="nuit-ic">${ic('moon')}</span><span style="flex:1;text-align:left"><b>Avant de dormir</b><span class="small muted" style="display:block">10 flashcards déjà vues, en douceur : sans chrono ni son.</span></span>${ic('next')}</button>` : ''}
+  ${await carteReprendre()}
   ${exams.length ? `<div class="row" style="flex-wrap:wrap">${exams.slice(0, 3).map((o) => `<span class="chip m c-${o.x.m.couleur}">${esc(o.x.m.code)} · ${daysUntil(o.e.t) === 0 ? 'aujourd’hui' : 'J-' + daysUntil(o.e.t)}</span>`).join('')}</div>` : ''}
   <div class="between"><h2 class="section-title">Mes matières</h2><span class="small muted">${esc(semestreLabel(u.semestre))}</span></div>
   <div class="subjects">
@@ -472,7 +479,7 @@ async function viewMatieres() {
   const u = S.getUser();
   const all = await Promise.all(S.matieres().map(matiereStats));
   const sems = [...new Set(all.map((x) => x.m.semestre || u.semestre))];
-  $app.innerHTML = `<div class="between"><h1>Matières</h1><a class="icon-btn" href="#/recherche" aria-label="Rechercher une notion">${ic('search')}</a></div>
+  $app.innerHTML = `<div class="between"><h1>S’entraîner</h1><a class="icon-btn" href="#/recherche" aria-label="Rechercher une notion">${ic('search')}</a></div>
   ${S.tousContenus().some((c) => c.glossaire?.length) ? `<a class="card cfg-card" href="#/recherche" style="text-decoration:none"><span><b>Glossaire et auteur·rices</b><span class="small muted" style="display:block">Toutes les notions de toutes tes matières, de A à Z</span></span>${ic('next')}</a>` : ''}` + sems.map((sem) => `
     <div class="between"><h2 class="section-title">${esc(semestreLabel(sem))}</h2>${sem === u.semestre ? '<span class="chip">en cours</span>' : ''}</div>
     <div class="list">${all.filter((x) => (x.m.semestre || u.semestre) === sem).map((x) => `
@@ -490,7 +497,11 @@ async function viewMatieres() {
 const matSel = {}; // sélection de chapitres par matière, gardée aussi dans localStorage
 const SEL_KEY = (code) => `stroop-sel-${code}`;
 function lireSel(code, chaps) {
-  try { const ids = new Set(chaps.map((c) => c.id)); return new Set((JSON.parse(localStorage.getItem(SEL_KEY(code)) || '[]')).filter((x) => ids.has(x))); } catch { return new Set(); }
+  try {
+    const ids = new Set(chaps.map((c) => c.id)), brut = localStorage.getItem(SEL_KEY(code));
+    if (brut === null) return new Set(ids); // première visite : tout est coché
+    return new Set(JSON.parse(brut).filter((x) => ids.has(x)));
+  } catch { return new Set(); }
 }
 const garderSel = (code, sel) => { try { localStorage.setItem(SEL_KEY(code), JSON.stringify([...sel])); } catch { /* stockage plein ou privé */ } };
 const CFG_KEY = (code) => `stroop-cfg-${code}`;
@@ -533,16 +544,36 @@ async function viewMatiere(code) {
     return;
   }
   const chaps = x.contenu.chapitres.slice().sort((a, b) => (a.ordre ?? 0) - (b.ordre ?? 0));
-  const st = matSel[code] || (matSel[code] = { sel: lireSel(code, chaps) });
+  const st = matSel[code] || (matSel[code] = { sel: lireSel(code, chaps), notions: {}, ouverts: new Set(), depuis: null });
+  // Arrivée depuis une fiche de l'onglet Réviser : seules les notions de la page sont cochées.
+  try {
+    const dr = JSON.parse(sessionStorage.getItem('stroop-depuis-rev') || 'null');
+    sessionStorage.removeItem('stroop-depuis-rev');
+    if (dr && dr.code === code && chaps.some((c) => c.id === dr.chap)) {
+      st.sel = new Set([dr.chap]); st.notions = { [dr.chap]: new Set(dr.notions) }; st.ouverts = new Set([dr.chap]);
+      st.depuis = { chap: dr.chap, n: dr.notions.length };
+    }
+  } catch { /* rien */ }
+  const notionsDe = (c) => [...new Set(c.elements.map((e) => e.notion).filter(Boolean))];
+  const statuts = new Map(notionStats(x.items, x.prog).notions.map((n) => [`${n.chapitre}|${n.nom}`, n.statut]));
+  const pdot = (c, n) => { const s = statuts.get(`${c}|${n}`); return `<span class="pdot ${s === 'maitrisee' ? 'ok' : s && s !== 'nouvelle' ? 'consol' : 'vide'}" aria-hidden="true"></span>`; };
+  const basculerNotion = (c, nom) => {
+    const tous = notionsDe(c);
+    const set = st.sel.has(c.id) ? new Set(st.notions[c.id] || tous) : new Set();
+    set.has(nom) ? set.delete(nom) : set.add(nom);
+    if (!set.size) { st.sel.delete(c.id); delete st.notions[c.id]; } else { st.sel.add(c.id); if (set.size === tous.length) delete st.notions[c.id]; else st.notions[c.id] = set; }
+  };
   const render = () => {
-    garderSel(code, st.sel);
+    if (!st.depuis) garderSel(code, st.sel);
     const cfg = getCfg(code);
-    const dansSel = (it) => !st.sel.size || st.sel.has(it.chapitre); // rien de coché = toute la matière
+    const dansSel = (it) => (!st.sel.size || st.sel.has(it.chapitre)) && (!st.notions[it.chapitre] || st.notions[it.chapitre].has(it.notion)); // rien de coché = toute la matière
+    const nbNotions = Object.values(st.notions).reduce((a, n) => a + n.size, 0);
+    const portee = st.depuis ? plural(nbNotions, 'notion') : !st.sel.size || (st.sel.size === chaps.length && !nbNotions) ? 'Toute la matière' : nbNotions ? `${plural(st.sel.size, 'chapitre')}, notions choisies` : plural(st.sel.size, 'chapitre');
     const selItems = filtrerOuvertes(x.items.filter((it) => dansSel(it) && matchCfg(it, cfg)), x.prog, cfg.toutOuvrir, x.items);
     const errItems = x.items.filter((it) => dansSel(it) && x.prog[it.id]?.err && it.type !== 'flashcard');
-    const flashItems = x.items.filter((it) => it.type === 'flashcard' && (!st.sel.size || st.sel.has(it.chapitre)));
+    const flashItems = x.items.filter((it) => it.type === 'flashcard' && dansSel(it));
     const flashDue = flashItems.filter((it) => { const p = x.prog[it.id]; return !p || !p.box || isDue(p); }).length;
-    const all = chaps.every((c) => st.sel.has(c.id));
+    const all = chaps.every((c) => st.sel.has(c.id)) && !Object.keys(st.notions).length;
     const ex = nextExam(m);
     const nb = cfg.n === 'tout' ? selItems.length : Math.min(cfg.n, selItems.length);
     $app.innerHTML = `
@@ -554,6 +585,7 @@ async function viewMatiere(code) {
           ${x.contenu.importeLe ? `<div class="small muted" style="opacity:.75">Contenu${x.contenu.revision ? ` v${x.contenu.revision}` : ''} mis à jour le ${new Date(x.contenu.importeLe).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long' })} à ${new Date(x.contenu.importeLe).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}</div>` : ''}</div>
         <button class="ring" id="ringinfo" aria-label="Maîtrise ${x.maitrise} %, comment c’est calculé" style="border:none;background:conic-gradient(var(--m-acc) 0 ${x.maitrise}%, var(--ghost) ${x.maitrise}% 100%)"><div><b>${pct(x.maitrise)}</b><small>maîtrise ⓘ</small></div></button>
       </div>
+      ${st.depuis ? `<div class="depuis-rev">${ic('book')}<span><b>Tu viens de réviser ${plural(st.depuis.n, 'notion')} du ${esc(shortChap(chaps.find((c) => c.id === st.depuis.chap)?.titre))}</b><span class="small" style="display:block;opacity:.9">${st.depuis.n > 1 ? 'Seules elles sont cochées' : 'Seule elle est cochée'}, pour t’entraîner dessus tout de suite.</span><button id="tousChap">Revenir à tous les chapitres</button></span></div>` : ''}
       <div class="between"><h2 class="section-title">Mes boîtes</h2><button class="flag-btn" id="tuto" style="color:var(--m-ink);font-weight:800">Comment ça marche ?</button></div>
       <div class="boxes">${[0, 1, 2, 3, 4, 5].map((b) => {
         const its = x.items.filter((it) => (x.prog[it.id]?.box || 0) === b);
@@ -569,17 +601,19 @@ async function viewMatiere(code) {
           const nv = niveauxChapitre(c.elements, x.prog), p100 = (v) => Math.round(v * 100);
           const etape = !c.elements.some((e) => e.prio) ? '' : cfg.toutOuvrir ? 'Tout débloqué' : nv.max === 1 && nv.aAppro ? `Socle acquis à ${p100(nv.socle)} % · la suite à 75 %` : nv.max === 2 && nv.aDetail ? `Approfondissements acquis à ${p100(nv.appro)} % · les détails à 75 %` : nv.max === 1 ? `Socle acquis à ${p100(nv.socle)} %` : 'Tout débloqué';
           return `${partHead}<div class="chaprow">
-            <button class="chap" data-chap="${esc(c.id)}" aria-pressed="${st.sel.has(c.id)}">
-              <span class="box" aria-hidden="true"><svg class="ic" viewBox="0 0 24 24">${IC.check}</svg></span>
+            <button class="chap" data-chap="${esc(c.id)}" aria-pressed="${st.sel.has(c.id) ? (st.notions[c.id] ? 'mixed' : 'true') : 'false'}">
+              <span class="box${st.notions[c.id] ? ' partiel' : ''}" aria-hidden="true"><svg class="ic" viewBox="0 0 24 24">${IC.check}</svg></span>
               <span class="info"><span class="between"><span class="name">${esc(c.titre)}</span><span class="small muted">${pct(mm)}</span></span>
               <span class="bar duo"><span class="seen" style="width:${Math.round((vus / ids.length) * 100)}%"></span><span style="width:${mm}%"></span></span>${etape ? `<span class="small muted etape">${esc(etape)}</span>` : ''}</span>
             </button>
-            ${c.fiche?.length ? `<button class="icon-btn fiche-btn" data-fiche="${esc(c.id)}" aria-label="Fiche de cours : ${esc(c.titre)}">${ic('book')}</button>` : ''}
-          </div>`;
+            ${notionsDe(c).length > 1 ? `<button class="icon-btn deplier" data-deplier="${esc(c.id)}" aria-expanded="${st.ouverts.has(c.id)}" aria-label="Choisir les notions : ${esc(c.titre)}">${ic('down')}</button>` : ''}
+            ${c.cours?.length || c.fiche?.length ? `<button class="icon-btn fiche-btn" data-fiche="${esc(c.id)}" aria-label="Fiche de cours : ${esc(c.titre)}">${ic('book')}</button>` : ''}
+          </div>
+          ${st.ouverts.has(c.id) ? `<div class="nsel">${notionsDe(c).map((n) => `<button class="ncheck" data-nchap="${esc(c.id)}" data-nnom="${esc(n)}" aria-pressed="${st.sel.has(c.id) && (!st.notions[c.id] || st.notions[c.id].has(n))}"><span class="box" aria-hidden="true"><svg class="ic" viewBox="0 0 24 24">${IC.check}</svg></span><span class="nom">${esc(n)}</span>${pdot(c.id, n)}</button>`).join('')}</div>` : ''}`;
         }).join('')}
       </div>
       <button class="card cfg-card" id="cfg"><span><b>Réglages de session</b><span class="small muted" style="display:block">${esc(cfgSummary(cfg))}</span></span><span class="flag-btn" style="color:var(--m-ink);font-weight:800">Modifier</span></button>
-      <button class="cta cta-m lance" id="go" ${selItems.length ? '' : 'disabled'}><span><span class="t">Lancer la session</span><span class="s">${selItems.length ? `${st.sel.size ? plural(st.sel.size, 'chapitre') : 'Toute la matière'} · ${plural(nb, 'question')}` : 'Aucune question avec ces réglages'}</span></span><span class="go">${ic('arrow')}</span></button>
+      <button class="cta cta-m lance" id="go" ${selItems.length ? '' : 'disabled'}><span><span class="t">Lancer la session</span><span class="s">${selItems.length ? `${esc(portee)} · ${plural(nb, 'question')}` : 'Aucune question avec ces réglages'}</span></span><span class="go">${ic('arrow')}</span></button>
       <div class="actions">
         <div class="two">
           <button class="btn soft" id="rafale" ${selItems.length ? '' : 'disabled'}>${ic('bolt')}Rafale 2 min</button>
@@ -589,15 +623,28 @@ async function viewMatiere(code) {
         <button class="btn plain block" id="ecoute">${ic('casque')}Écouter ${st.sel.size ? (st.sel.size > 1 ? 'ces chapitres' : 'ce chapitre') : 'la matière'}</button>
       </div>
     </div>`;
-    $app.querySelectorAll('[data-chap]').forEach((b) => b.onclick = () => { const id = b.dataset.chap; st.sel.has(id) ? st.sel.delete(id) : st.sel.add(id); render(); $app.querySelector(`[data-chap="${CSS.escape(id)}"]`)?.focus({ preventScroll: true }); });
-    $app.querySelectorAll('[data-fiche]').forEach((b) => b.onclick = () => ficheSheet(m, chaps.find((c) => c.id === b.dataset.fiche)));
-    $app.querySelectorAll('[data-partie]').forEach((b) => b.onclick = () => { const p = b.dataset.partie; const cs = chaps.filter((c) => c.partie === p); const on = cs.every((c) => st.sel.has(c.id)); cs.forEach((c) => on ? st.sel.delete(c.id) : st.sel.add(c.id)); render(); });
-    document.getElementById('all').onclick = () => { if (all) st.sel.clear(); else chaps.forEach((c) => st.sel.add(c.id)); render(); };
+    const quitteDepuis = () => { if (st.depuis) { st.depuis = null; } };
+    $app.querySelectorAll('[data-chap]').forEach((b) => b.onclick = () => {
+      const id = b.dataset.chap; quitteDepuis();
+      if (st.notions[id]) delete st.notions[id]; else if (st.sel.has(id)) st.sel.delete(id); else st.sel.add(id);
+      render(); $app.querySelector(`[data-chap="${CSS.escape(id)}"]`)?.focus({ preventScroll: true });
+    });
+    $app.querySelectorAll('[data-deplier]').forEach((b) => b.onclick = () => { const id = b.dataset.deplier; st.ouverts.has(id) ? st.ouverts.delete(id) : st.ouverts.add(id); render(); $app.querySelector(`[data-deplier="${CSS.escape(id)}"]`)?.focus({ preventScroll: true }); });
+    $app.querySelectorAll('[data-nchap]').forEach((b) => b.onclick = () => {
+      const c = chaps.find((k) => k.id === b.dataset.nchap); basculerNotion(c, b.dataset.nnom);
+      if (st.depuis) st.depuis.n = Object.values(st.notions).reduce((a, n) => a + n.size, 0) || 0;
+      if (st.depuis && !st.depuis.n) st.depuis = null;
+      render(); $app.querySelector(`[data-nchap="${CSS.escape(c.id)}"][data-nnom="${CSS.escape(b.dataset.nnom)}"]`)?.focus({ preventScroll: true });
+    });
+    $app.querySelectorAll('[data-fiche]').forEach((b) => b.onclick = () => { const c = chaps.find((k) => k.id === b.dataset.fiche); c.cours?.length ? go(`#/fiche/${encodeURIComponent(code)}/${encodeURIComponent(c.id)}/0`) : ficheSheet(m, c); });
+    $app.querySelectorAll('[data-partie]').forEach((b) => b.onclick = () => { quitteDepuis(); const p = b.dataset.partie; const cs = chaps.filter((c) => c.partie === p); const on = cs.every((c) => st.sel.has(c.id) && !st.notions[c.id]); cs.forEach((c) => { delete st.notions[c.id]; on ? st.sel.delete(c.id) : st.sel.add(c.id); }); render(); });
+    document.getElementById('all').onclick = () => { quitteDepuis(); st.notions = {}; if (all) st.sel.clear(); else chaps.forEach((c) => st.sel.add(c.id)); render(); };
+    document.getElementById('tousChap')?.addEventListener('click', () => { st.depuis = null; st.notions = {}; st.sel = new Set(chaps.map((c) => c.id)); render(); });
     document.getElementById('ringinfo').onclick = () => masteryInfo(m, x);
     document.getElementById('tuto').onclick = () => leitnerTuto(m);
     $app.querySelectorAll('[data-box]').forEach((b) => b.onclick = () => boxSheet(m, x, Number(b.dataset.box)));
     document.getElementById('cfg').onclick = () => cfgSheet(m, x, st, render);
-    const opts = { code, chapitres: [...st.sel] };
+    const opts = { code, chapitres: [...st.sel], notions: Object.keys(st.notions).length ? Object.fromEntries(Object.entries(st.notions).map(([k, v]) => [k, [...v]])) : null };
     document.getElementById('go').onclick = () => startSession({ ...opts, kind: 'normal' });
     document.getElementById('rafale').onclick = () => startSession({ ...opts, kind: 'rafale' });
     document.getElementById('err').onclick = () => startSession({ ...opts, kind: 'erreurs' });
@@ -607,6 +654,154 @@ async function viewMatiere(code) {
   };
   render();
   if (!localStorage.getItem('stroop-tuto-leitner')) { localStorage.setItem('stroop-tuto-leitner', '1'); leitnerTuto(m); }
+}
+
+/* ================= Réviser ================= */
+// Les fiches (champ `cours` des chapitres) : plan des notions, pages de fiche, passage vers S'entraîner.
+const REV_LAST = 'stroop-rev-last';
+const enc = encodeURIComponent;
+const lireDernier = () => { try { return JSON.parse(localStorage.getItem(REV_LAST) || 'null'); } catch { return null; } };
+const notionsFiche = (c) => [...new Set((c.cours || []).flatMap((p) => p.notions))];
+const revOuverts = {};
+let ficheMode = 'fiche';
+function pastilles(contenu, prog) {
+  const st = new Map(notionStats(S.flatItems(contenu), prog).notions.map((n) => [`${n.chapitre}|${n.nom}`, n.statut]));
+  return (c, n) => { const s = st.get(`${c}|${n}`); return s === 'maitrisee' ? 'ok' : s && s !== 'nouvelle' ? 'consol' : 'vide'; };
+}
+const legendeP = () => `<div class="plegende"><span><span class="pdot ok"></span>Maîtrisé</span><span><span class="pdot consol"></span>À consolider</span><span><span class="pdot vide"></span>Pas encore testé</span></div>`;
+// Vers S'entraîner, avec seulement ces notions cochées.
+function entrainerSur(code, chap, notions) {
+  sessionStorage.setItem('stroop-depuis-rev', JSON.stringify({ code, chap, notions }));
+  go(`#/matiere/${enc(code)}`);
+}
+
+async function carteReprendre() {
+  const last = lireDernier(); if (!last) return '';
+  const m = S.getMatiere(last.code); const contenu = m && await S.getContenu(last.code);
+  const c = contenu?.chapitres.find((k) => k.id === last.chap); const p = c?.cours?.[last.idx];
+  if (!p) return '';
+  return `<a class="card reprendre c-${m.couleur}" href="#/fiche/${enc(last.code)}/${enc(c.id)}/${last.idx}"><span class="between"><span class="mini-puce">REPRENDRE MA RÉVISION · ${esc(m.code)}</span><span class="small muted">page ${last.idx + 1} / ${c.cours.length}</span></span><span class="t">${esc(shortChap(c.titre))} · ${esc(p.titre)}</span></a>`;
+}
+
+async function viewReviser() {
+  tabbar('#/reviser'); setHalo(null);
+  const lignes = [];
+  for (const m of S.matieres()) {
+    const contenu = await S.getContenu(m.code); if (!contenu) continue;
+    const chaps = contenu.chapitres.filter((c) => c.cours?.length); if (!chaps.length) continue;
+    const rev = await S.getRevise(m.code);
+    let tot = 0, faits = 0;
+    for (const c of chaps) for (const n of notionsFiche(c)) { tot++; if (rev[S.cleNotion(c.id, n)]) faits++; }
+    lignes.push({ m, tot, faits });
+  }
+  $app.innerHTML = `<div class="between"><h1>Réviser</h1><a class="icon-btn" href="#/recherche" aria-label="Rechercher une notion">${ic('search')}</a></div>
+  <p class="muted" style="margin:-6px 0 0">Les fiches de tes cours, chapitre par chapitre.</p>
+  ${await carteReprendre()}
+  <h2 class="section-title">Tes matières</h2>
+  ${lignes.length ? `<div class="list">${lignes.map(({ m, tot, faits }) => `<a class="card rev-mat c-${m.couleur}" href="#/reviser/${enc(m.code)}"><span class="pastille">${esc(m.code)}</span>
+    <span style="flex:1;min-width:0;display:flex;flex-direction:column;gap:6px"><b>${esc(m.nom)}</b><span class="small muted">${faits ? `${faits} / ${tot} notions révisées` : `${plural(tot, 'notion')} · pas encore commencé`}</span><span class="bar"><span style="width:${tot ? Math.round((faits / tot) * 100) : 0}%"></span></span></span>${ic('next')}</a>`).join('')}</div>`
+    : '<div class="card empty"><p><b>Pas encore de fiches.</b></p><p class="muted small">Elles arrivent avec les contenus des matières.</p></div>'}`;
+}
+
+async function viewRevMatiere(code, ouvrir) {
+  tabbar('#/reviser');
+  const m = S.getMatiere(code); if (!m) return go('#/reviser');
+  const contenu = await S.getContenu(code); if (!contenu) return go('#/reviser');
+  setHalo(m.couleur);
+  const prog = await S.getProgres(code), rev = await S.getRevise(code), cls = pastilles(contenu, prog);
+  const chaps = contenu.chapitres.slice().sort((a, b) => (a.ordre ?? 0) - (b.ordre ?? 0)).filter((c) => c.cours?.length);
+  const ouverts = revOuverts[code] || (revOuverts[code] = new Set());
+  if (ouvrir) ouverts.add(ouvrir);
+  const render = () => {
+    let total = 0, faits = 0;
+    chaps.forEach((c) => notionsFiche(c).forEach((n) => { total++; if (rev[S.cleNotion(c.id, n)]) faits++; }));
+    $app.innerHTML = `<a class="icon-btn" href="#/reviser" aria-label="Retour">${ic('back')}</a>
+    <div class="c-${m.couleur}" style="display:flex;flex-direction:column;gap:14px">
+      <div class="mat-head"><div style="min-width:0"><div class="code">${esc(m.code)}</div><b>${esc(m.nom)}</b><div class="small muted">${faits} / ${total} notions révisées</div></div></div>
+      ${legendeP()}
+      <div class="list" style="gap:10px">${chaps.map((c, ci) => {
+        const ns = notionsFiche(c), nf = ns.filter((n) => rev[S.cleNotion(c.id, n)]);
+        const partHead = c.partie && c.partie !== chaps[ci - 1]?.partie ? `<div class="partie-head"><span>${esc(PARTIES[c.partie] || c.partie)}</span></div>` : '';
+        return `${partHead}<details class="rchap" data-rc="${esc(c.id)}" ${ouverts.has(c.id) ? 'open' : ''}>
+          <summary><span style="flex:1;min-width:0;display:flex;flex-direction:column;gap:3px"><b>${esc(c.titre)}</b><span class="small muted">${plural(c.cours.length, 'page')} · ${nf.length} / ${ns.length} notions révisées</span></span>
+            <span class="dots" aria-hidden="true">${ns.map((n) => `<span class="pdot ${cls(c.id, n)}"></span>`).join('')}</span>${ic('down')}</summary>
+          <div class="corps">${c.cours.map((p, pi) => `<div class="rpage"><a href="#/fiche/${enc(code)}/${enc(c.id)}/${pi}"><span>${esc(p.titre)}</span><span class="lire">Lire</span></a>
+            ${p.notions.map((n) => { const k = S.cleNotion(c.id, n); return `<button class="ncheck" data-k="${esc(k)}" aria-pressed="${!!rev[k]}"><span class="box" aria-hidden="true"><svg class="ic" viewBox="0 0 24 24">${IC.check}</svg></span><span class="nom">${esc(n)}</span><span class="pdot ${cls(c.id, n)}" aria-hidden="true"></span></button>`; }).join('')}</div>`).join('')}
+            <p class="aide">Coche une notion quand tu considères l’avoir révisée. La pastille, elle, vient de tes résultats en entraînement.</p>
+            ${nf.length ? `<button class="btn-m" data-train="${esc(c.id)}"><span><span class="t">M’entraîner sur ces notions</span><span class="s">${plural(nf.length, 'notion révisée', 'notions révisées')} de ce chapitre</span></span><span class="go">${ic('arrow')}</span></button>` : ''}
+          </div></details>`;
+      }).join('')}</div>
+    </div>`;
+    $app.querySelectorAll('details.rchap').forEach((d) => d.addEventListener('toggle', () => { d.open ? ouverts.add(d.dataset.rc) : ouverts.delete(d.dataset.rc); }));
+    $app.querySelectorAll('[data-k]').forEach((b) => b.onclick = async () => {
+      const k = b.dataset.k; await S.setRevise(code, [k], !rev[k]); render();
+      $app.querySelector(`[data-k="${CSS.escape(k)}"]`)?.focus({ preventScroll: true });
+    });
+    $app.querySelectorAll('[data-train]').forEach((b) => b.onclick = () => { const c = chaps.find((k) => k.id === b.dataset.train); entrainerSur(code, c.id, notionsFiche(c).filter((n) => rev[S.cleNotion(c.id, n)])); });
+  };
+  render();
+  if (ouvrir) setTimeout(() => $app.querySelector(`[data-rc="${CSS.escape(ouvrir)}"]`)?.scrollIntoView({ block: 'start', behavior: 'smooth' }), 60);
+}
+
+// Chapitre d'une autre fiche, d'après son identifiant (« pat1-cm4 » → matière PAT1).
+async function cibleLien(code, chapId) {
+  const code2 = chapId.split('-')[0].toUpperCase();
+  if (!S.getMatiere(code2)) return null;
+  const c = (await S.getContenu(code2))?.chapitres.find((k) => k.id === chapId);
+  if (!c?.cours?.length) return null;
+  return { href: `#/fiche/${enc(code2)}/${enc(chapId)}/0`, titre: `${code2 !== code ? code2 + ' · ' : ''}${shortChap(c.titre)}` };
+}
+
+async function viewFiche(code, chapId, idx) {
+  tabbar('#/reviser');
+  const m = S.getMatiere(code); const contenu = m && await S.getContenu(code);
+  const c = contenu?.chapitres.find((k) => k.id === chapId);
+  if (!c?.cours?.length) return go(m ? `#/reviser/${enc(code)}` : '#/reviser');
+  idx = Math.max(0, Math.min(c.cours.length - 1, idx));
+  const p = c.cours[idx], n = c.cours.length;
+  setHalo(m.couleur);
+  localStorage.setItem(REV_LAST, JSON.stringify({ code, chap: c.id, idx }));
+  const prog = await S.getProgres(code), rev = await S.getRevise(code), cls = pastilles(contenu, prog);
+  const liens = {};
+  for (const b of p.blocs) if (b.type === 'liens') for (const l of b.items) liens[l.chap] = await cibleLien(code, l.chap);
+  const cles = p.notions.map((x) => S.cleNotion(c.id, x));
+  const url = (i) => `#/fiche/${enc(code)}/${enc(c.id)}/${i}`;
+  // Cours complet : la fiche détaillée historique, sections de cette page mises en avant.
+  const secs = new Set(c.elements.filter((e) => p.notions.includes(e.notion) && e.section).map((e) => e.section));
+  const complet = () => `<div class="fiche-tete"><span class="fiche-puce">${esc(m.code)} · ${esc(shortChap(c.titre))} · COURS COMPLET</span><h1>${titreSurligne(c.titre.split(' · ').slice(1).join(' · ') || c.titre)}</h1><p class="fiche-acc">La version détaillée du chapitre. En couleur : ce qui correspond à cette page.</p></div>
+    ${(c.fiche || []).map((s) => `<section class="fiche-sec ${secs.has(s.id) ? 'hl' : ''}"><h3>${esc(s.titre)}</h3><ul>${s.points.map((x) => `<li>${esc(x)}</li>`).join('')}</ul>${figureHtml(s.figure)}</section>`).join('') || '<p class="muted">Pas de version détaillée pour ce chapitre.</p>'}`;
+  const render = () => {
+    const fait = cles.every((k) => rev[k]);
+    $app.innerHTML = `<div class="c-${m.couleur}" style="display:flex;flex-direction:column;gap:12px">
+      <div class="fiche-barre"><a class="icon-btn" href="#/reviser/${enc(code)}/${enc(c.id)}" aria-label="Retour au plan de ${esc(m.code)}">${ic('back')}</a>
+        <div class="fiche-seg" role="group" aria-label="Niveau de détail"><button data-mode="fiche" aria-pressed="${ficheMode === 'fiche'}">Fiche</button><button data-mode="complet" aria-pressed="${ficheMode === 'complet'}">Cours complet</button></div><span style="width:44px"></span></div>
+      ${n > 1 ? `<div class="fiche-points" role="img" aria-label="Page ${idx + 1} sur ${n}">${c.cours.map((q, i) => `<span class="${i === idx ? 'ici' : q.notions.every((x) => rev[S.cleNotion(c.id, x)]) ? 'lu' : ''}"></span>`).join('')}</div>` : ''}
+      <article class="fiche" id="fiche">${ficheMode === 'fiche' ? `${pageHtml(p, { puce: `${m.code} · ${shortChap(c.titre)}`, lien: (id) => liens[id] })}
+        <div class="fiche-pied"><span class="small muted" style="font-weight:800">Notions de cette page</span>
+          <div class="nots">${p.notions.map((x) => `<span><span class="pdot ${cls(c.id, x)}" aria-hidden="true"></span>${esc(x)}</span>`).join('')}</div>
+          <button class="btn-revise" id="revise" aria-pressed="${fait}">${ic('check')}${fait ? 'Page révisée' : 'J’ai révisé cette page'}</button></div>` : complet()}</article>
+      ${n > 1 ? `<div class="fiche-nav">${idx > 0 ? `<a class="btn plain" href="${url(idx - 1)}">${ic('back')}Précédente</a>` : '<span></span>'}${idx < n - 1 ? `<a class="btn plain" href="${url(idx + 1)}">Suivante${ic('next')}</a>` : '<span></span>'}</div>` : ''}
+      <div class="fiche-bas"><button class="btn-m" id="train"><span><span class="t">M’entraîner sur ces notions</span><span class="s">${p.notions.length > 1 ? `les ${p.notions.length} notions de cette page` : 'la notion de cette page'}</span></span><span class="go">${ic('arrow')}</span></button></div>
+    </div>`;
+    $app.querySelectorAll('[data-mode]').forEach((b) => b.onclick = () => { ficheMode = b.dataset.mode; render(); });
+    document.getElementById('revise')?.addEventListener('click', async () => { await S.setRevise(code, cles, !fait); render(); document.getElementById('revise')?.focus({ preventScroll: true }); });
+    document.getElementById('train').onclick = () => entrainerSur(code, c.id, p.notions);
+    // Glisser à gauche ou à droite pour changer de page.
+    const art = document.getElementById('fiche'); let x0 = null, y0 = 0;
+    art.addEventListener('touchstart', (e) => { x0 = e.touches[0].clientX; y0 = e.touches[0].clientY; }, { passive: true });
+    art.addEventListener('touchend', (e) => {
+      if (x0 === null) return; const dx = e.changedTouches[0].clientX - x0, dy = e.changedTouches[0].clientY - y0; x0 = null;
+      if (Math.abs(dx) > 70 && Math.abs(dx) > 1.5 * Math.abs(dy)) { const j = idx + (dx < 0 ? 1 : -1); if (j >= 0 && j < n) go(url(j)); }
+    });
+  };
+  render();
+}
+
+// « Revoir le cours » pendant une session : la page de fiche qui traite la notion.
+function pageSheet(m, chap, notion) {
+  const p = chap.cours[pageDeNotion(chap, notion)];
+  openSheet(`<div class="between"><span class="small muted" style="font-weight:800">${esc(m.code)} · ${esc(shortChap(chap.titre))}</span><button class="icon-btn" data-close aria-label="Fermer">${ic('close')}</button></div>
+    <article class="fiche">${pageHtml(p, { puce: '' })}</article>`, `c-${m.couleur}`);
 }
 
 /* ================= Mode écoute ================= */
@@ -1234,12 +1429,13 @@ function loadSaved() {
   } catch { return null; }
 }
 
-async function startSession({ code, chapitres = null, kind = 'normal', ids = null, titre = null }) {
+async function startSession({ code, chapitres = null, notions = null, kind = 'normal', ids = null, titre = null }) {
   const contenu = await S.getContenu(code);
   const prog = await S.getProgres(code);
   const cfg = kind === 'jour' ? { types: TYPE_KEYS, n: 12, niveau: 'tous', chrono: getCfg(code).chrono } : getCfg(code);
   let items = S.flatItems(contenu);
   if (chapitres && chapitres.length) items = items.filter((it) => chapitres.includes(it.chapitre));
+  if (notions) items = items.filter((it) => !notions[it.chapitre] || notions[it.chapitre].includes(it.notion));
   let vix = null;
   if (kind === 'notion') ({ items, vix } = planNotion(items.filter((it) => ids.includes(it.id))));
   else if (kind === 'nuit') items = planNuit(items, prog);
@@ -1386,6 +1582,7 @@ async function viewSession() {
 
   const ficheLink = () => {
     const chap = chapById[it.chapitre];
+    if (chap?.cours?.length) return `<button class="flag-btn fiche-link" id="fiche">${ic('book')}Revoir la fiche : ${esc(chap.cours[pageDeNotion(chap, it.notion)].titre)}</button>`;
     const sec = chap?.fiche?.find((s) => s.id === it.section);
     return sec ? `<button class="flag-btn fiche-link" id="fiche">${ic('book')}Revoir le cours : ${esc(sec.titre)}</button>` : '';
   };
@@ -1598,7 +1795,7 @@ async function viewSession() {
         ov.remove(); unlockScroll();
       };
     };
-    document.getElementById('fiche')?.addEventListener('click', () => ficheSheet(m, chapById[it.chapitre], it.section));
+    document.getElementById('fiche')?.addEventListener('click', () => { const ch = chapById[it.chapitre]; ch?.cours?.length ? pageSheet(m, ch, it.notion) : ficheSheet(m, ch, it.section); });
   }
 
   render();
