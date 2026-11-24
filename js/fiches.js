@@ -58,3 +58,37 @@ export function pageHtml(page, ctx = {}) {
 
 /** La page d'un chapitre qui traite une notion (pour « Revoir le cours » après une erreur). */
 export const pageDeNotion = (chap, notion) => Math.max(0, (chap?.cours || []).findIndex((p) => p.notions.includes(notion)));
+
+/**
+ * Cours complet d'un chapitre (champ `complet` : [{ id, titre, corps }]).
+ * `corps` est un texte simple : « ## » sous-titre, « - » puce, « ! » encadré important,
+ * « > » citation, « | a | b | » tableau (1re ligne = en-têtes), ligne vide = nouveau paragraphe.
+ */
+export function completHtml(sections, hl = new Set()) {
+  return sections.map((s) => `<section class="cc-sec${hl.has(s.id) ? ' hl' : ''}" id="cc-${esc(s.id)}"><h2>${t(s.titre)}</h2>${corpsHtml(s.corps)}</section>`).join('');
+}
+function corpsHtml(src) {
+  const out = []; let liste = null, tab = null, para = [];
+  const fermer = () => {
+    if (para.length) { out.push(`<p>${para.map(t).join(' ')}</p>`); para = []; }
+    if (liste) { out.push(`<ul>${liste.map((x) => `<li>${t(x)}</li>`).join('')}</ul>`); liste = null; }
+    if (tab) {
+      const [h, ...r] = tab;
+      out.push(`<div class="fb-tab" tabindex="0"><table><thead><tr>${h.map((c) => `<th>${t(c)}</th>`).join('')}</tr></thead><tbody>${r.map((l) => `<tr>${l.map((c, i) => (i ? `<td>${t(c)}</td>` : `<th scope="row">${t(c)}</th>`)).join('')}</tr>`).join('')}</tbody></table></div>`);
+      tab = null;
+    }
+  };
+  for (const brut of String(src || '').split('\n')) {
+    const l = brut.trim();
+    if (!l) { fermer(); continue; }
+    if (l.startsWith('## ')) { fermer(); out.push(`<h3>${t(l.slice(3))}</h3>`); continue; }
+    if (l.startsWith('- ')) { if (para.length || tab) { const li = liste; liste = null; fermer(); liste = li; } (liste = liste || []).push(l.slice(2)); continue; }
+    if (l.startsWith('|')) { if (!tab) fermer(); (tab = tab || []).push(l.replace(/^\||\|$/g, '').split('|').map((c) => c.trim())); continue; }
+    if (l.startsWith('! ')) { fermer(); out.push(`<div class="fb-piege cc-nb"><span class="bang" aria-hidden="true">!</span><span>${t(l.slice(2))}</span></div>`); continue; }
+    if (l.startsWith('> ')) { fermer(); out.push(`<blockquote>${t(l.slice(2))}</blockquote>`); continue; }
+    if (liste || tab) fermer();
+    para.push(l);
+  }
+  fermer();
+  return out.join('');
+}

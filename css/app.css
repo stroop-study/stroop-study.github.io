@@ -656,3 +656,13 @@ details.rchap[open]>summary .ic{transform:rotate(180deg)}
 .chap[aria-pressed="mixed"]{border-color:var(--m-acc)}
 .icon-btn.deplier .ic{transition:transform .2s}
 .icon-btn.deplier[aria-expanded="true"] .ic{transform:rotate(180deg)}
+/* cours complet */
+.cc-sec{display:flex;flex-direction:column;gap:10px;padding-top:4px}
+.cc-sec+.cc-sec{border-top:1.5px dashed var(--line);padding-top:18px}
+.cc-sec h2{font:700 20px 'Outfit',sans-serif;margin:0;color:var(--m-ink)}
+.cc-sec h3{font:700 16px 'Outfit',sans-serif;margin:6px 0 0}
+.cc-sec p{margin:0;font-size:15px;line-height:1.55}
+.cc-sec ul{margin:0;padding-left:20px;display:flex;flex-direction:column;gap:5px;font-size:15px;line-height:1.5}
+.cc-sec blockquote{margin:0;border-left:4px solid var(--m-acc);padding:4px 0 4px 12px;font-style:italic;font-size:15px;line-height:1.5}
+.cc-sec.hl{background:var(--m-bg);border-radius:18px;padding:14px;margin:0 -6px}
+.cc-sec.hl+.cc-sec{border-top:none}

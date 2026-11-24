@@ -1,6 +1,6 @@
 // Service worker : met l'appli en cache pour qu'elle s'ouvre même sans réseau.
 // Les données (cartes, progression) sont gérées hors ligne par Firestore, pas ici.
-const VERSION = 'v3.0.1';
+const VERSION = 'v3.1.0';
 const CACHE = `stroop-${VERSION}`;
 // SDK Firebase et polices hébergés dans l'appli (aucun CDN) : cache séparé, nommé d'après la version du SDK.
 const VENDOR_FB = 'vendor-fb-10.12.2';

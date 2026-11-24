@@ -3,7 +3,7 @@ import { figureHtml } from './figures.js';
 import { son, getSons, setSons, setSilence, sessionAudio } from './sons.js';
 import * as R from './recherche.js';
 import * as N from './notifs.js';
-import { pageHtml, pageDeNotion, titreSurligne } from './fiches.js';
+import { pageHtml, pageDeNotion, titreSurligne, completHtml } from './fiches.js';
 import {
   auth, onAuthStateChanged, GoogleAuthProvider, signInWithPopup, signInWithRedirect, getRedirectResult,
   sendEmailVerification, signInWithEmailAndPassword, createUserWithEmailAndPassword, sendPasswordResetEmail, signOut
@@ -12,7 +12,7 @@ import * as S from './store.js';
 import { today, isDue, dueDate, nextState, mastery, notionStats, seenCount, prioritize, shuffle, streak, INTERVALS, PRIO_NOMS, niveauxChapitre, filtrerOuvertes } from './leitner.js';
 import { TYPES, TYPE_KEYS, NIVEAUX, typeLabel, timeFor, formatOf, checkCourte, sameSet, resolveVariants, nbVariantes, normalize } from './types.js';
 
-const VERSION = '3.0.1';
+const VERSION = '3.1.0';
 const $app = document.getElementById('app');
 const $tab = document.getElementById('tabbar');
 const $halos = document.getElementById('halos');
@@ -765,7 +765,7 @@ async function viewFiche(code, chapId, idx) {
   // Cours complet : la fiche détaillée historique, sections de cette page mises en avant.
   const secs = new Set(c.elements.filter((e) => p.notions.includes(e.notion) && e.section).map((e) => e.section));
   const complet = () => `<div class="fiche-tete"><span class="fiche-puce">${esc(m.code)} · ${esc(shortChap(c.titre))} · COURS COMPLET</span><h1>${titreSurligne(c.titre.split(' · ').slice(1).join(' · ') || c.titre)}</h1><p class="fiche-acc">La version détaillée du chapitre. En couleur : ce qui correspond à cette page.</p></div>
-    ${(c.fiche || []).map((s) => `<section class="fiche-sec ${secs.has(s.id) ? 'hl' : ''}"><h3>${esc(s.titre)}</h3><ul>${s.points.map((x) => `<li>${esc(x)}</li>`).join('')}</ul>${figureHtml(s.figure)}</section>`).join('') || '<p class="muted">Pas de version détaillée pour ce chapitre.</p>'}`;
+    ${c.complet?.length ? completHtml(c.complet, new Set(c.complet.filter((k) => (k.notions || []).some((x) => p.notions.includes(x))).map((k) => k.id))) : (c.fiche || []).map((s) => `<section class="fiche-sec ${secs.has(s.id) ? 'hl' : ''}"><h3>${esc(s.titre)}</h3><ul>${s.points.map((x) => `<li>${esc(x)}</li>`).join('')}</ul>${figureHtml(s.figure)}</section>`).join('') || '<p class="muted">Pas de version détaillée pour ce chapitre.</p>'}`;
   const render = () => {
     const fait = cles.every((k) => rev[k]);
     $app.innerHTML = `<div class="c-${m.couleur}" style="display:flex;flex-direction:column;gap:12px">
@@ -780,6 +780,7 @@ async function viewFiche(code, chapId, idx) {
       <div class="fiche-bas"><button class="btn-m" id="train"><span><span class="t">M’entraîner sur ces notions</span><span class="s">${p.notions.length > 1 ? `les ${p.notions.length} notions de cette page` : 'la notion de cette page'}</span></span><span class="go">${ic('arrow')}</span></button></div>
     </div>`;
     $app.querySelectorAll('[data-mode]').forEach((b) => b.onclick = () => { ficheMode = b.dataset.mode; render(); });
+    if (ficheMode === 'complet') setTimeout(() => $app.querySelector('.cc-sec.hl')?.scrollIntoView({ block: 'start', behavior: 'smooth' }), 80);
     document.getElementById('revise')?.addEventListener('click', async () => { await S.setRevise(code, cles, !fait); render(); document.getElementById('revise')?.focus({ preventScroll: true }); });
     document.getElementById('train').onclick = () => entrainerSur(code, c.id, p.notions);
     // Glisser à gauche ou à droite pour changer de page.
