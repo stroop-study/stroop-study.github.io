@@ -12,7 +12,7 @@ import * as S from './store.js';
 import { today, isDue, dueDate, nextState, mastery, notionStats, seenCount, prioritize, shuffle, streak, INTERVALS, PRIO_NOMS, niveauxChapitre, filtrerOuvertes } from './leitner.js';
 import { TYPES, TYPE_KEYS, NIVEAUX, typeLabel, timeFor, formatOf, checkCourte, sameSet, resolveVariants, nbVariantes, normalize } from './types.js';
 
-const VERSION = '3.1.1';
+const VERSION = '3.2.0';
 const $app = document.getElementById('app');
 const $tab = document.getElementById('tabbar');
 const $halos = document.getElementById('halos');
@@ -660,6 +660,7 @@ const lireDernier = () => { try { return JSON.parse(localStorage.getItem(REV_LAS
 const notionsFiche = (c) => [...new Set((c.cours || []).flatMap((p) => p.notions))];
 const revOuverts = {};
 let ficheMode = 'fiche';
+let ficheSens = 0; // sens du dernier changement de page (pour l’animation d’arrivée)
 function pastilles(contenu, prog) {
   const st = new Map(notionStats(S.flatItems(contenu), prog).notions.map((n) => [`${n.chapitre}|${n.nom}`, n.statut]));
   return (c, n) => { const s = st.get(`${c}|${n}`); return s === 'maitrisee' ? 'ok' : s && s !== 'nouvelle' ? 'consol' : 'vide'; };
@@ -764,32 +765,59 @@ async function viewFiche(code, chapId, idx) {
   const url = (i) => `#/fiche/${enc(code)}/${enc(c.id)}/${i}`;
   // Cours complet : la fiche détaillée historique, sections de cette page mises en avant.
   const secs = new Set(c.elements.filter((e) => p.notions.includes(e.notion) && e.section).map((e) => e.section));
-  const complet = () => `<div class="fiche-tete"><span class="fiche-puce">${esc(m.code)} · ${esc(shortChap(c.titre))} · COURS COMPLET</span><h1>${titreSurligne(c.titre.split(' · ').slice(1).join(' · ') || c.titre)}</h1><p class="fiche-acc">La version détaillée du chapitre. En couleur : ce qui correspond à cette page.</p></div>
+  const complet = () => `<div class="fiche-tete"><span class="fiche-puce">${esc(m.code)} · ${esc(shortChap(c.titre))} · COURS COMPLET</span><h1>${titreSurligne(c.titre.split(' · ').slice(1).join(' · ') || c.titre)}</h1><p class="fiche-acc">Tout le chapitre, à lire comme un document. Les parties marquées « ta fiche » correspondent à la page que tu révisais.</p></div>
     ${c.complet?.length ? completHtml(c.complet, new Set(c.complet.filter((k) => (k.notions || []).some((x) => p.notions.includes(x))).map((k) => k.id))) : (c.fiche || []).map((s) => `<section class="fiche-sec ${secs.has(s.id) ? 'hl' : ''}"><h3>${esc(s.titre)}</h3><ul>${s.points.map((x) => `<li>${esc(x)}</li>`).join('')}</ul>${figureHtml(s.figure)}</section>`).join('') || '<p class="muted">Pas de version détaillée pour ce chapitre.</p>'}`;
   const render = () => {
     const fait = cles.every((k) => rev[k]);
     $app.innerHTML = `<div class="c-${m.couleur}" style="display:flex;flex-direction:column;gap:12px">
       <div class="fiche-barre"><a class="icon-btn" href="#/reviser/${enc(code)}/${enc(c.id)}" aria-label="Retour au plan de ${esc(m.code)}">${ic('back')}</a>
         <div class="fiche-seg" role="group" aria-label="Niveau de détail"><button data-mode="fiche" aria-pressed="${ficheMode === 'fiche'}">Fiche</button><button data-mode="complet" aria-pressed="${ficheMode === 'complet'}">Cours complet</button></div><span style="width:44px"></span></div>
-      ${n > 1 ? `<div class="fiche-points" role="img" aria-label="Page ${idx + 1} sur ${n}">${c.cours.map((q, i) => `<span class="${i === idx ? 'ici' : q.notions.every((x) => rev[S.cleNotion(c.id, x)]) ? 'lu' : ''}"></span>`).join('')}</div>` : ''}
-      <article class="fiche" id="fiche">${ficheMode === 'fiche' ? `${pageHtml(p, { puce: `${m.code} · ${shortChap(c.titre)}`, lien: (id) => liens[id] })}
+      ${n > 1 && ficheMode === 'fiche' ? `<div class="fiche-points" role="img" aria-label="Page ${idx + 1} sur ${n}">${c.cours.map((q, i) => `<span class="${i === idx ? 'ici' : q.notions.every((x) => rev[S.cleNotion(c.id, x)]) ? 'lu' : ''}"></span>`).join('')}</div>` : ''}
+      <article class="fiche${ficheMode === 'complet' ? ' doc' : ''}" id="fiche">${ficheMode === 'fiche' ? `${pageHtml(p, { puce: `${m.code} · ${shortChap(c.titre)}`, lien: (id) => liens[id] })}
         <div class="fiche-pied"><span class="small muted" style="font-weight:800">Notions de cette page</span>
           <div class="nots">${p.notions.map((x) => `<span><span class="pdot ${cls(c.id, x)}" aria-hidden="true"></span>${esc(x)}</span>`).join('')}</div>
           <button class="btn-revise" id="revise" aria-pressed="${fait}">${ic('check')}${fait ? 'Page révisée' : 'J’ai révisé cette page'}</button></div>` : complet()}</article>
-      ${n > 1 ? `<div class="fiche-nav">${idx > 0 ? `<a class="btn plain" href="${url(idx - 1)}">${ic('back')}Précédente</a>` : '<span></span>'}${idx < n - 1 ? `<a class="btn plain" href="${url(idx + 1)}">Suivante${ic('next')}</a>` : '<span></span>'}</div>` : ''}
+      ${n > 1 && ficheMode === 'fiche' ? `<div class="fiche-nav">${idx > 0 ? `<a class="btn plain" data-sens="-1" href="${url(idx - 1)}">${ic('back')}Précédente</a>` : '<span></span>'}${idx < n - 1 ? `<a class="btn plain" data-sens="1" href="${url(idx + 1)}">Suivante${ic('next')}</a>` : '<span></span>'}</div>` : ''}
       <div class="fiche-bas"><button class="btn-m" id="train"><span><span class="t">M’entraîner sur ces notions</span><span class="s">${p.notions.length > 1 ? `les ${p.notions.length} notions de cette page` : 'la notion de cette page'}</span></span><span class="go">${ic('arrow')}</span></button></div>
     </div>`;
-    $app.querySelectorAll('[data-mode]').forEach((b) => b.onclick = () => { ficheMode = b.dataset.mode; render(); });
-    if (ficheMode === 'complet') setTimeout(() => $app.querySelector('.cc-sec.hl')?.scrollIntoView({ block: 'start', behavior: 'smooth' }), 80);
+    $app.querySelectorAll('[data-mode]').forEach((b) => b.onclick = () => { if (ficheMode === b.dataset.mode) return; ficheMode = b.dataset.mode; render(); window.scrollTo(0, 0); });
     document.getElementById('revise')?.addEventListener('click', async () => { await S.setRevise(code, cles, !fait); render(); document.getElementById('revise')?.focus({ preventScroll: true }); });
     document.getElementById('train').onclick = () => entrainerSur(code, c.id, p.notions);
-    // Glisser à gauche ou à droite pour changer de page.
-    const art = document.getElementById('fiche'); let x0 = null, y0 = 0;
-    art.addEventListener('touchstart', (e) => { x0 = e.touches[0].clientX; y0 = e.touches[0].clientY; }, { passive: true });
-    art.addEventListener('touchend', (e) => {
-      if (x0 === null) return; const dx = e.changedTouches[0].clientX - x0, dy = e.changedTouches[0].clientY - y0; x0 = null;
-      if (Math.abs(dx) > 70 && Math.abs(dx) > 1.5 * Math.abs(dy)) { const j = idx + (dx < 0 ? 1 : -1); if (j >= 0 && j < n) go(url(j)); }
-    });
+    $app.querySelectorAll('[data-sens]').forEach((a) => a.addEventListener('click', () => { ficheSens = Number(a.dataset.sens); }));
+    const art = document.getElementById('fiche');
+    if (ficheMode === 'complet') {
+      const vers = (el) => { if (!el) return; const y = el.getBoundingClientRect().top + window.scrollY - 12; window.scrollTo({ top: y, behavior: calme() ? 'auto' : 'smooth' }); };
+      art.querySelectorAll('[data-cc]').forEach((a) => a.onclick = (ev) => { ev.preventDefault(); vers(document.getElementById('cc-' + a.dataset.cc)); });
+      art.querySelector('[data-cc-haut]')?.addEventListener('click', () => vers(art.querySelector('.cc-somm') || art));
+      return; // pas de glissement dans le document : il se lit d’un bout à l’autre
+    }
+    if (ficheSens && !calme()) art.animate([{ transform: `translateX(${ficheSens * 48}px)`, opacity: 0 }, { transform: 'none', opacity: 1 }], { duration: 220, easing: 'cubic-bezier(.2,.8,.2,1)' });
+    ficheSens = 0;
+    if (n < 2) return;
+    // Glisser à gauche ou à droite pour changer de page : la fiche suit le doigt, un petit geste ou un geste rapide suffit.
+    let x0 = null, y0 = 0, t0 = 0, axe = null, dx = 0;
+    art.addEventListener('touchstart', (e) => {
+      const tab = e.target.closest('.fb-tab');
+      if (tab && tab.scrollWidth > tab.clientWidth + 2) { x0 = null; return; } // un tableau qui défile horizontalement garde le geste
+      x0 = e.touches[0].clientX; y0 = e.touches[0].clientY; t0 = Date.now(); axe = null; dx = 0; art.style.transition = 'none';
+    }, { passive: true });
+    art.addEventListener('touchmove', (e) => {
+      if (x0 === null) return;
+      const mx = e.touches[0].clientX - x0, my = e.touches[0].clientY - y0;
+      if (!axe && (Math.abs(mx) > 8 || Math.abs(my) > 8)) axe = Math.abs(mx) > Math.abs(my) ? 'x' : 'y';
+      if (axe !== 'x') return;
+      dx = mx; const bord = (dx > 0 && idx === 0) || (dx < 0 && idx === n - 1);
+      art.style.transform = `translateX(${bord ? dx * 0.25 : dx}px)`;
+    }, { passive: true });
+    const fin = () => {
+      if (x0 === null) return; x0 = null; if (axe !== 'x') return;
+      const v = Math.abs(dx) / Math.max(1, Date.now() - t0), j = idx + (dx < 0 ? 1 : -1);
+      if ((Math.abs(dx) > 45 || (Math.abs(dx) > 18 && v > 0.25)) && j >= 0 && j < n) {
+        art.style.transition = 'transform .16s ease-in, opacity .16s ease-in'; art.style.transform = `translateX(${dx < 0 ? -105 : 105}%)`; art.style.opacity = '0';
+        ficheSens = dx < 0 ? 1 : -1; setTimeout(() => go(url(j)), calme() ? 0 : 150);
+      } else { art.style.transition = 'transform .25s cubic-bezier(.2,.8,.2,1)'; art.style.transform = ''; }
+    };
+    art.addEventListener('touchend', fin); art.addEventListener('touchcancel', fin);
   };
   render();
 }
@@ -1953,7 +1981,6 @@ async function viewProfil(section) {
     affichage: card(`<div class="field">Apparence<div class="seg" role="group">${[['auto', 'Auto'], ['clair', 'Clair'], ['sombre', 'Sombre']].map(([k, l]) => `<button data-th="${k}" aria-pressed="${theme === k}">${l}</button>`).join('')}</div></div>`) + card(`
       <div class="between"><h2 class="section-title">Sons</h2><label class="tgl"><input type="checkbox" id="sonOn" ${getSons().on ? 'checked' : ''}><span></span><b class="sr">Activer les sons</b></label></div>
       <div class="row" style="gap:12px;${getSons().on ? '' : 'opacity:.5'}"><span class="small muted">Volume</span><input type="range" id="sonVol" min="0" max="100" step="5" value="${Math.round(getSons().vol * 100)}" style="flex:1"><button class="flag-btn" id="sonTest">Écouter</button></div>
-      <label class="switch" style="${getSons().on ? '' : 'opacity:.5'}"><input type="checkbox" id="sonSil" ${getSons().silencieux ? 'checked' : ''}><span><b>Même en mode silencieux</b><span class="small muted" style="display:block">Sur iPhone, les sons passent même quand le téléphone est en silencieux. Contrepartie imposée par iOS : la musique d’une autre appli (Spotify…) se met en pause au premier son. Désactive l’option si tu révises en musique.</span></span></label>
       `),
     bibliotheque: S.isAdmin() ? card(`
       <h2 class="section-title">Importer du contenu</h2>
@@ -1999,7 +2026,6 @@ ${testeurs}` : '',
   }
   bindNotifCard();
   const sonOn = document.getElementById('sonOn'); if (sonOn) sonOn.onchange = (e) => { setSons({ on: e.target.checked }); if (e.target.checked) son('ok'); viewProfil(section); };
-  const sonSil = document.getElementById('sonSil'); if (sonSil) sonSil.onchange = (e) => { setSons({ silencieux: e.target.checked }); sessionAudio(); son('ok'); };
   const sonVol = document.getElementById('sonVol'); if (sonVol) sonVol.onchange = (e) => { setSons({ vol: Number(e.target.value) / 100 }); son('ok'); };
   const sonTest = document.getElementById('sonTest'); if (sonTest) sonTest.onclick = () => son('up');
   const prenom = document.getElementById('prenom'); if (prenom) prenom.onchange = (e) => S.saveUser({ prenom: e.target.value.trim() }).then(() => toast('Enregistré'));

@@ -65,7 +65,11 @@ export const pageDeNotion = (chap, notion) => Math.max(0, (chap?.cours || []).fi
  * « > » citation, « | a | b | » tableau (1re ligne = en-têtes), ligne vide = nouveau paragraphe.
  */
 export function completHtml(sections, hl = new Set()) {
-  return sections.map((s) => `<section class="cc-sec${hl.has(s.id) ? ' hl' : ''}" id="cc-${esc(s.id)}"><h2>${t(s.titre)}</h2>${corpsHtml(s.corps)}</section>`).join('');
+  // Présenté comme un document : sommaire cliquable, parties numérotées, lecture continue depuis le début.
+  const mots = sections.reduce((n, s) => n + String(s.corps || '').split(/\s+/).length, 0);
+  const somm = `<nav class="cc-somm" aria-label="Sommaire"><span class="cc-somm-t">Sommaire · ${sections.length} parties · environ ${Math.max(1, Math.round(mots / 200))} min de lecture</span><ol>${sections.map((s) => `<li><a href="#cc-${esc(s.id)}" data-cc="${esc(s.id)}">${t(s.titre)}</a>${hl.has(s.id) ? '<span class="cc-tag">ta fiche</span>' : ''}</li>`).join('')}</ol></nav>`;
+  return somm + sections.map((s, i) => `<section class="cc-sec${hl.has(s.id) ? ' hl' : ''}" id="cc-${esc(s.id)}"><h2><span class="cc-num">${i + 1}</span>${t(s.titre)}</h2>${hl.has(s.id) ? '<span class="cc-tag">En lien avec ta fiche</span>' : ''}${corpsHtml(s.corps)}</section>`).join('')
+    + '<button class="btn plain cc-haut" data-cc-haut>Revenir au sommaire</button>';
 }
 function corpsHtml(src) {
   const out = []; let liste = null, tab = null, para = [];

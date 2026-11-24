@@ -664,5 +664,20 @@ details.rchap[open]>summary .ic{transform:rotate(180deg)}
 .cc-sec p{margin:0;font-size:15px;line-height:1.55}
 .cc-sec ul{margin:0;padding-left:20px;display:flex;flex-direction:column;gap:5px;font-size:15px;line-height:1.5}
 .cc-sec blockquote{margin:0;border-left:4px solid var(--m-acc);padding:4px 0 4px 12px;font-style:italic;font-size:15px;line-height:1.5}
-.cc-sec.hl{background:var(--m-bg);border-radius:18px;padding:14px;margin:0 -6px}
-.cc-sec.hl+.cc-sec{border-top:none}
+.cc-sec.hl{border-left:4px solid var(--m-acc);padding-left:12px;margin-left:-4px}
+/* cours complet présenté comme un document */
+.fiche.doc{border-radius:18px;padding:28px 22px 24px;gap:22px;touch-action:auto;width:100%;max-width:760px;align-self:center}
+.fiche.doc::before,.fiche.doc::after{display:none}
+.fiche.doc .fiche-tete h1{padding-right:0}
+.cc-somm{background:var(--m-bg);border-radius:16px;padding:14px 16px;display:flex;flex-direction:column;gap:8px}
+.cc-somm-t{font-size:12px;font-weight:800;letter-spacing:.3px;color:var(--m-ink)}
+.cc-somm ol{margin:0;padding-left:22px;display:flex;flex-direction:column;gap:6px;font-size:14.5px;line-height:1.35}
+.cc-somm a{color:var(--ink);font-weight:700;text-decoration:none}
+.cc-somm a:hover{text-decoration:underline}
+.cc-tag{display:inline-block;margin-left:6px;background:var(--card);color:var(--m-ink);border-radius:99px;padding:1px 8px;font-size:11px;font-weight:800;vertical-align:1px}
+.cc-sec>.cc-tag{align-self:flex-start;margin:0;background:var(--m-bg)}
+.cc-sec{scroll-margin-top:12px}
+.cc-sec h2{display:flex;gap:10px;align-items:baseline}
+.cc-num{font:800 13px 'Nunito',sans-serif;color:var(--m-ink);background:var(--m-bg);border-radius:99px;min-width:24px;height:24px;display:inline-grid;place-items:center;flex-shrink:0}
+.cc-haut{align-self:center}
+@media (min-width:700px){.fiche.doc{padding:40px 44px 32px}.cc-sec p,.cc-sec ul,.cc-sec blockquote{font-size:16px;line-height:1.6}}

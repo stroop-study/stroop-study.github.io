@@ -5,21 +5,14 @@ const KEY = 'stroop-sons';
 let ctx = null;
 
 export function getSons() {
-  try { return { on: true, vol: 0.6, silencieux: true, ...JSON.parse(localStorage.getItem(KEY) || '{}') }; } catch { return { on: true, vol: 0.6, silencieux: true }; }
+  try { const { on = true, vol = 0.6 } = JSON.parse(localStorage.getItem(KEY) || '{}'); return { on, vol }; } catch { return { on: true, vol: 0.6 }; }
 }
 export function setSons(patch) { localStorage.setItem(KEY, JSON.stringify({ ...getSons(), ...patch })); }
 
-// Session audio iOS (Safari 16.4+). Seul « playback » ignore le bouton silencieux : « transient » et
-// « ambient » le respectent tous les deux (WebKit les range dans la catégorie AmbientSound).
-// Contrepartie de « playback » : iOS met en pause la musique d'une autre appli au premier son.
-const typeVoulu = () => (getSons().silencieux ? 'playback' : 'ambient');
+// Session audio iOS (Safari 16.4+) : « ambient » respecte le bouton silencieux et ne coupe pas la musique
+// d'une autre appli. (L'option « Même en mode silencieux » de 2.18.3 a été retirée en 3.2.0 : elle faisait ramer l'interface.)
 export function sessionAudio() {
-  try {
-    if (!navigator.audioSession || navigator.audioSession.type === typeVoulu()) return;
-    navigator.audioSession.type = typeVoulu();
-    // Le contexte Web Audio garde la catégorie qu'il avait à sa création : on le recrée au prochain son.
-    if (ctx) { ctx.close().catch(() => {}); ctx = null; }
-  } catch {}
+  try { if (navigator.audioSession && navigator.audioSession.type !== 'ambient') navigator.audioSession.type = 'ambient'; } catch {}
 }
 function audio() {
   sessionAudio();
@@ -32,8 +25,7 @@ function audio() {
   return ctx;
 }
 
-let cible = null; // contexte de rendu hors ligne pendant la fabrication des fichiers son
-const ctxSon = () => cible || audio();
+const ctxSon = () => audio();
 
 function tone(f, t0, dur, { type = 'sine', gain = 0.25, glide = 0, attack = 0.008 } = {}) {
   const c = ctxSon(); if (!c) return;
@@ -86,63 +78,7 @@ const SONS = {
 
 let silence = false; // mode « avant de dormir » : aucun son
 export const setSilence = (v) => { silence = !!v; };
-// ---- Mode silencieux (iPhone) ----
-// Sur iOS, un son Web Audio suit le bouton silencieux, alors qu'un élément <audio> (comme le mode écoute)
-// est joué quoi qu'il arrive. Avec l'option « Même en mode silencieux », chaque son est donc rendu une fois
-// en petit fichier WAV (OfflineAudioContext), puis joué par des éléments <audio> réutilisés.
-const SR = 22050;
-const fichiers = {}; let volFichiers = null; let rendu = null;
-const lecteurs = []; let prochain = 0;
-
-function wav(buf) {
-  const d = buf.getChannelData(0), n = d.length, v = new DataView(new ArrayBuffer(44 + n * 2));
-  const w = (o, t) => { for (let i = 0; i < t.length; i++) v.setUint8(o + i, t.charCodeAt(i)); };
-  w(0, 'RIFF'); v.setUint32(4, 36 + n * 2, true); w(8, 'WAVE'); w(12, 'fmt '); v.setUint32(16, 16, true);
-  v.setUint16(20, 1, true); v.setUint16(22, 1, true); v.setUint32(24, SR, true); v.setUint32(28, SR * 2, true);
-  v.setUint16(32, 2, true); v.setUint16(34, 16, true); w(36, 'data'); v.setUint32(40, n * 2, true);
-  for (let i = 0; i < n; i++) v.setInt16(44 + i * 2, Math.max(-1, Math.min(1, d[i])) * 0x7fff, true);
-  return URL.createObjectURL(new Blob([v], { type: 'audio/wav' }));
-}
-async function rendreTout() {
-  const OAC = window.OfflineAudioContext || window.webkitOfflineAudioContext; if (!OAC) return;
-  const vol = getSons().vol;
-  for (const nom of Object.keys(SONS)) {
-    const c = new OAC(1, Math.round(SR * 1.1), SR);
-    cible = c; try { SONS[nom](); } finally { cible = null; }
-    const buf = await c.startRendering();
-    if (fichiers[nom]) URL.revokeObjectURL(fichiers[nom]);
-    fichiers[nom] = wav(buf);
-  }
-  volFichiers = vol;
-}
-function preparer() {
-  if (!rendu || volFichiers !== getSons().vol) rendu = rendreTout().catch(() => {});
-  return rendu;
-}
-// Au premier toucher, on « déverrouille » quelques lecteurs (iOS n'autorise la lecture qu'après un geste).
-function deverrouiller() {
-  if (lecteurs.length || !getSons().silencieux) return;
-  sessionAudio();
-  for (let i = 0; i < 4; i++) {
-    const a = new Audio(); a.preload = 'auto'; a.setAttribute('playsinline', '');
-    a.src = 'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAIlYAAESsAAACABAAZGF0YQAAAAA=';
-    a.play().catch(() => {}); lecteurs.push(a);
-  }
-  preparer();
-}
-if (typeof window !== 'undefined') {
-  for (const ev of ['pointerdown', 'touchend', 'keydown']) window.addEventListener(ev, deverrouiller, { capture: true, passive: true });
-}
-function jouerFichier(nom) {
-  if (!fichiers[nom] || volFichiers !== getSons().vol) { preparer().then(() => { if (fichiers[nom]) jouerFichier(nom); }); return; }
-  sessionAudio();
-  let a = lecteurs[prochain % Math.max(1, lecteurs.length)]; prochain++;
-  if (!a) { a = new Audio(); lecteurs.push(a); }
-  try { a.pause(); a.src = fichiers[nom]; a.currentTime = 0; } catch {}
-  a.play().catch(() => {});
-}
-
 export function son(nom) {
   if (silence || !getSons().on || !SONS[nom]) return;
-  try { if (getSons().silencieux) jouerFichier(nom); else SONS[nom](); } catch {}
+  try { SONS[nom](); } catch {}
 }
