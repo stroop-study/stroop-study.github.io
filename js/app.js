@@ -12,7 +12,7 @@ import * as S from './store.js';
 import { today, isDue, dueDate, nextState, mastery, notionStats, seenCount, prioritize, shuffle, streak, INTERVALS, PRIO_NOMS, niveauxChapitre, filtrerOuvertes } from './leitner.js';
 import { TYPES, TYPE_KEYS, NIVEAUX, typeLabel, timeFor, formatOf, checkCourte, sameSet, resolveVariants, nbVariantes, normalize } from './types.js';
 
-const VERSION = '3.1.0';
+const VERSION = '3.1.1';
 const $app = document.getElementById('app');
 const $tab = document.getElementById('tabbar');
 const $halos = document.getElementById('halos');
@@ -1346,7 +1346,7 @@ async function viewSession() {
   const footer = (canValidate, validateLabel = 'Valider') => st.answered
     ? `${fmt === 'courte' && !st.correct && !st.skip && st.text.trim() ? '<button class="btn soft block" id="jaibon">J’avais bon : ma réponse veut dire la même chose</button>' : ''}${st.correct ? `<button class="flag-btn pif" id="pif" aria-pressed="${st.pif}">${st.pif ? '✓ Noté : c’était au pif' : 'C’était au pif ?'}</button>` : ''}<button class="btn primary block" id="next">Continuer${ic('next')}</button>`
     : `<div class="two"><button class="btn plain" id="skip">Je ne sais pas</button><button class="btn primary" id="val" ${canValidate ? '' : 'disabled'}>${validateLabel}</button></div>`;
-  const scenario = () => (it.type === 'cas' ? `<div class="scenario"><span class="lab">Cas pratique</span><p>${esc(it.scenario)}</p></div>` : '') + figureHtml(it.figure);
+  const scenario = () => (it.type === 'cas' || (it.type === 'redaction' && it.scenario) ? `<div class="scenario"><span class="lab">Cas pratique</span><p>${esc(it.scenario)}</p></div>` : '') + figureHtml(it.figure);
   const flag = () => `<button class="flag-btn" id="flag">${ic('flag')}Signaler</button>`;
 
   const render = () => {
