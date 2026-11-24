@@ -12,7 +12,7 @@ import * as S from './store.js';
 import { today, isDue, dueDate, nextState, mastery, notionStats, seenCount, prioritize, shuffle, streak, INTERVALS, PRIO_NOMS, niveauxChapitre, filtrerOuvertes } from './leitner.js';
 import { TYPES, TYPE_KEYS, NIVEAUX, typeLabel, timeFor, formatOf, checkCourte, sameSet, resolveVariants, nbVariantes, normalize } from './types.js';
 
-const VERSION = '3.2.0';
+const VERSION = '3.2.1';
 const $app = document.getElementById('app');
 const $tab = document.getElementById('tabbar');
 const $halos = document.getElementById('halos');
@@ -407,7 +407,10 @@ async function viewHome() {
   if (mood === 'arcenciel' && localStorage.getItem('stroop-arc-joue') !== today()) { localStorage.setItem('stroop-arc-joue', today()); setTimeout(() => son('sport'), 400); }
   if (mood === 'sport' && localStorage.getItem('stroop-sport-joue') !== today()) { localStorage.setItem('stroop-sport-joue', today()); setTimeout(() => son('sport'), 400); }
   const avecContenu = all.filter((x) => x.contenu);
-  const best = [...avecContenu].sort((a, b) => (b.due + b.neufs) - (a.due + a.neufs))[0];
+  // Matière de la session du jour : le plus de cartes à revoir + jamais vues, avec un bonus si un examen
+  // approche (rien ne change tant qu’aucune date d’examen n’est renseignée).
+  const poidsExam = (x) => { const e = nextExam(x.m); if (!e) return 1; const d = daysUntil(e.t); return d <= 30 ? 1 + (30 - d) / 15 : 1; };
+  const best = [...avecContenu].sort((a, b) => (b.due + b.neufs) * poidsExam(b) - (a.due + a.neufs) * poidsExam(a))[0];
   const todo = best ? Math.min(12, best.due + best.neufs) : 0;
 
   let bubble;
@@ -1210,7 +1213,14 @@ async function startSession({ code, chapitres = null, notions = null, kind = 'no
   if (kind === 'notion') ({ items, vix } = planNotion(items.filter((it) => ids.includes(it.id))));
   else if (kind === 'nuit') items = planNuit(items, prog);
   else if (ids) items = shuffle(items.filter((it) => ids.includes(it.id)));
-  else if (kind === 'jour') items = prioritize(items.filter((it) => it.type !== 'flashcard' && isDue(prog[it.id])), prog).slice(0, 12);
+  else if (kind === 'jour') {
+    // Session du jour : des cartes à revoir ET des nouvelles. Jusqu’à 8 à revoir, le reste en nouvelles ;
+    // s’il manque l’un ou l’autre, on complète avec ce qui reste.
+    const dispo = items.filter((it) => it.type !== 'flashcard' && isDue(prog[it.id]));
+    const revoir = prioritize(dispo.filter((it) => prog[it.id]?.box), prog), neuves = prioritize(dispo.filter((it) => !prog[it.id]?.box), prog);
+    const a = revoir.slice(0, Math.max(8, 12 - neuves.length)), b = neuves.slice(0, 12 - a.length);
+    items = [...a, ...b, ...revoir.slice(a.length)].slice(0, 12);
+  }
   else if (kind === 'flash') items = prioritize(filtrerOuvertes(items.filter((it) => it.type === 'flashcard'), prog, cfg.toutOuvrir, items), prog).slice(0, 20);
   else if (kind === 'erreurs') items = shuffle(items.filter((it) => prog[it.id]?.err && it.type !== 'flashcard'));
   else {
