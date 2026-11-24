@@ -12,7 +12,7 @@ import * as S from './store.js';
 import { today, isDue, dueDate, nextState, mastery, notionStats, seenCount, prioritize, shuffle, streak, INTERVALS, PRIO_NOMS, niveauxChapitre, filtrerOuvertes } from './leitner.js';
 import { TYPES, TYPE_KEYS, NIVEAUX, typeLabel, timeFor, formatOf, checkCourte, sameSet, resolveVariants, nbVariantes, normalize } from './types.js';
 
-const VERSION = '3.0.0';
+const VERSION = '3.0.1';
 const $app = document.getElementById('app');
 const $tab = document.getElementById('tabbar');
 const $halos = document.getElementById('halos');
@@ -1881,8 +1881,8 @@ const PROFIL_SECTIONS = [
   { id: 'rappels', icon: 'bell', titre: 'Rappels', sous: 'Heures et types' },
   { id: 'affichage', icon: 'sun', titre: 'Apparence et sons', sous: 'Thème, sons, volume' },
   { id: 'bibliotheque', icon: 'books', titre: 'Bibliothèque', sous: 'Contenus partagés', admin: 'Importer du contenu, versions' },
-  { id: 'signalements', icon: 'flag', titre: 'Signalements', sous: 'Questions à corriger', admin: 'Mes questions à corriger' },
-  { id: 'testeurs', icon: 'chart', titre: 'Testeur·ses', sous: 'Invité·es, signalements, activité', adminSeul: true },
+  { id: 'signalements', icon: 'flag', titre: 'Signalements', sous: 'Questions à corriger', admin: 'Les tiens et ceux des invité·es' },
+  { id: 'testeurs', icon: 'chart', titre: 'Testeur·ses', sous: 'Invité·es et leur activité', adminSeul: true },
   { id: 'aide', icon: 'help', titre: 'Aide', sous: 'Installer, Leitner, maîtrise, version' },
   { id: 'donnees', icon: 'download', titre: 'Mes données', sous: 'Exporter' }
 ];
@@ -1942,7 +1942,7 @@ async function viewProfil(section) {
   const testeurs = section === 'testeurs' && S.isAdmin() ? await testeursHtml(await S.statsTesteurs()) : '';
   const card = (html) => `<div class="card" style="padding:16px;display:flex;flex-direction:column;gap:12px">${html}</div>`;
   const etatRappels = { actif: 'Activés', inactif: 'Désactivés', bientot: 'Bientôt', installer: 'À installer', impossible: 'Indisponibles', refuse: 'Bloqués' }[N.etat()];
-  const badge = { rappels: etatRappels, signalements: flags.length ? String(flags.length) : '', testeurs: flagsInv?.length ? String(flagsInv.length) : '', affichage: getSons().on ? '' : 'Sons coupés' };
+  const badge = { rappels: etatRappels, signalements: (flags.length + (flagsInv?.length || 0)) ? String(flags.length + (flagsInv?.length || 0)) : '', affichage: getSons().on ? '' : 'Sons coupés' };
   const SEC = {
     compte: card(`
       <label class="field">Prénom<input id="prenom" value="${esc(u.prenom || '')}" autocomplete="given-name"></label>
@@ -1968,7 +1968,8 @@ async function viewProfil(section) {
       <div id="vers">${versionsHtml()}</div>`)
       : card(`<p class="muted small" style="margin:0">${S.libOk() ? 'Tu as accès au contenu commun. Ta progression n’appartient qu’à toi.' : `Tu n’as pas encore accès au contenu commun. Donne cette adresse à l’admin : <b>${esc(auth.currentUser?.email || '')}</b>`}</p>`),
     signalements: card(`<h2 class="section-title">Mes signalements</h2>${flags.length ? `<div class="list">${flags.map((f) => `<div class="between" style="align-items:flex-start"><div><b class="small">${esc(f.matiere)} · ${esc(f.item.id)}</b><div class="small muted">${esc(itemLabel(f.item))}</div>${f.flag.note ? `<div class="small">« ${esc(f.flag.note)} »</div>` : ''}</div><button class="flag-btn" data-unflag="${esc(f.matiere)}|${esc(f.item.id)}">Retirer</button></div>`).join('')}</div>` : '<p class="muted small" style="margin:0">Aucun signalement. Pendant une session, touche « Signaler » sous une question qui te semble fausse ou mal posée.</p>'}`)
-      + (flags.length ? `<button class="btn plain block" id="copyflags">${ic('copy')}Copier tout pour Claude</button>` : ''),
+      + (S.isAdmin() ? card(`<h2 class="section-title">Signalements des invité·es</h2>${flagsInv === null ? `<p class="muted small" style="margin:0">Pour les voir, mets à jour les règles Firebase une fois : copie-les, puis colle-les dans Firebase (<b>Firestore → Règles</b>) et clique sur <b>Publier</b>.</p><button class="btn plain block" id="copyrules">${ic('copy')}Copier les règles</button>` : flagsInv.length ? `<div class="list">${flagsInv.map((f) => `<div class="between" style="align-items:flex-start"><div><b class="small">${esc(f.code)} · ${esc(f.item)}</b> <span class="small muted">par ${esc(f.prenom || f.email || 'un·e invité·e')}</span><div class="small muted">${esc(f.it ? itemLabel(f.it) : 'Question introuvable dans le contenu actuel')}</div>${f.note ? `<div class="small">« ${esc(f.note)} »</div>` : ''}</div><button class="flag-btn" data-unflaginv="${esc(f.sid)}">Retirer</button></div>`).join('')}</div>` : '<p class="muted small" style="margin:0">Aucun signalement de tes invité·es pour l’instant.</p>'}`) : '')
+      + ((flags.length || flagsInv?.length) ? `<button class="btn plain block" id="copyflags">${ic('copy')}Copier tout pour Claude</button>` : ''),
     aide: `<button class="card cfg-card" id="instP"><span><b>Installer Stroop sur mon téléphone</b><span class="small muted" style="display:block">Le tuto iPhone et Android, à partager aussi</span></span>${ic('next')}</button>
       <button class="card cfg-card" id="tutoP"><span><b>Comment fonctionne la boîte de Leitner ?</b><span class="small muted" style="display:block">Le petit tuto des 5 boîtes</span></span>${ic('next')}</button>
       ${card(`<b>Et la maîtrise ?</b><p class="muted small" style="margin:0">Dans chaque matière, touche le cercle de maîtrise pour voir comment elle se calcule et la liste de tes notions.</p>`)}
@@ -1978,8 +1979,7 @@ async function viewProfil(section) {
       <p class="muted small" style="margin:0">Ces personnes voient la même bibliothèque que toi, avec leur propre progression. Elles doivent se connecter avec cette adresse.</p>
       <div class="list">${(S.getAcces()?.membres || []).map((e) => `<div class="between"><span>${esc(e)}</span><button class="flag-btn" data-rm="${esc(e)}">Retirer</button></div>`).join('')}</div>
       <form id="inv" class="row"><label class="sr" for="invmail">Adresse e-mail</label><input id="invmail" type="email" placeholder="adresse@gmail.com" style="flex:1;border:2px solid var(--line);background:var(--card);border-radius:14px;padding:12px 14px;font-size:16px;min-width:0"><button class="btn primary" type="submit">Inviter</button></form>`)}
-      ${card(`<h2 class="section-title">Leurs signalements</h2>${flagsInv === null ? `<p class="muted small" style="margin:0">Pour les voir, mets à jour les règles Firebase une fois : copie-les, puis colle-les dans Firebase (<b>Firestore → Règles</b>) et clique sur <b>Publier</b>.</p><button class="btn plain block" id="copyrules">${ic('copy')}Copier les règles</button>` : flagsInv.length ? `<div class="list">${flagsInv.map((f) => `<div class="between" style="align-items:flex-start"><div><b class="small">${esc(f.code)} · ${esc(f.item)}</b> <span class="small muted">par ${esc(f.prenom || f.email || 'un·e invité·e')}</span><div class="small muted">${esc(f.it ? itemLabel(f.it) : 'Question introuvable dans le contenu actuel')}</div>${f.note ? `<div class="small">« ${esc(f.note)} »</div>` : ''}</div><button class="flag-btn" data-unflaginv="${esc(f.sid)}">Retirer</button></div>`).join('')}</div>` : '<p class="muted small" style="margin:0">Aucun signalement de tes invité·es pour l’instant.</p>'}`)}${flagsInv?.length ? `<button class="btn plain block" id="copyflags">${ic('copy')}Copier pour Claude</button>` : ''}
-      <h2 class="section-title" style="margin-top:4px">Leur activité</h2>${testeurs}` : '',
+${testeurs}` : '',
     donnees: card(`<p class="muted small" style="margin:0">Télécharge une copie de ta progression et de tes réglages (fichier .json).</p><button class="btn plain block" id="export">${ic('download')}Exporter mes données</button>`)
   };
   const sec = PROFIL_SECTIONS.find((x) => x.id === section && (!x.adminSeul || S.isAdmin()));
@@ -2045,8 +2045,8 @@ async function viewProfil(section) {
   });
   $app.querySelectorAll('[data-unflag]').forEach((b) => b.onclick = async () => { const [c, id] = b.dataset.unflag.split('|'); await S.unflagItem(c, id); viewProfil(section); });
   document.getElementById('copyflags')?.addEventListener('click', async () => {
-    const txt = (section === 'testeurs' ? '' : 'Signalements de mon appli de révisions :\n\n' + flags.map((f) => `- ${f.matiere} · ${f.item.id} · « ${itemLabel(f.item)} »${f.flag.note ? ` → ${f.flag.note}` : ''}`).join('\n'))
-      + (section === 'testeurs' && (flagsInv || []).length ? 'Signalements de mes invité·es :\n\n' + flagsInv.map((f) => `- ${f.code} · ${f.item}${f.it ? ` · « ${itemLabel(f.it)} »` : ''} (${f.prenom || f.email || 'invité·e'})${f.note ? ` → ${f.note}` : ''}`).join('\n') : '');
+    const txt = ('Signalements de mon appli de révisions :\n\n' + flags.map((f) => `- ${f.matiere} · ${f.item.id} · « ${itemLabel(f.item)} »${f.flag.note ? ` → ${f.flag.note}` : ''}`).join('\n'))
+      + ((flagsInv || []).length ? '\n\nSignalements de mes invité·es :\n\n' + flagsInv.map((f) => `- ${f.code} · ${f.item}${f.it ? ` · « ${itemLabel(f.it)} »` : ''} (${f.prenom || f.email || 'invité·e'})${f.note ? ` → ${f.note}` : ''}`).join('\n') : '');
     try { await navigator.clipboard.writeText(txt); toast('Copié ! Colle-le dans ta conversation avec Claude'); } catch { toast('Copie impossible sur cet appareil'); }
   });
   const tutoP = document.getElementById('tutoP'); if (tutoP) tutoP.onclick = () => leitnerTuto(null);
