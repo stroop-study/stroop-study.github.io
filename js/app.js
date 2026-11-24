@@ -12,7 +12,7 @@ import * as S from './store.js';
 import { today, isDue, dueDate, nextState, mastery, notionStats, seenCount, prioritize, shuffle, streak, INTERVALS, PRIO_NOMS, niveauxChapitre, filtrerOuvertes } from './leitner.js';
 import { TYPES, TYPE_KEYS, NIVEAUX, typeLabel, timeFor, formatOf, checkCourte, sameSet, resolveVariants, nbVariantes, normalize } from './types.js';
 
-const VERSION = '3.2.1';
+const VERSION = '3.2.2';
 const $app = document.getElementById('app');
 const $tab = document.getElementById('tabbar');
 const $halos = document.getElementById('halos');
@@ -481,7 +481,7 @@ async function viewMatieres() {
   const all = await Promise.all(S.matieres().map(matiereStats));
   const sems = [...new Set(all.map((x) => x.m.semestre || u.semestre))];
   $app.innerHTML = `<div class="between"><h1>S’entraîner</h1><a class="icon-btn" href="#/recherche" aria-label="Rechercher une notion">${ic('search')}</a></div>
-  ${S.tousContenus().some((c) => c.glossaire?.length) ? `<a class="card cfg-card" href="#/recherche" style="text-decoration:none"><span><b>Glossaire et auteur·rices</b><span class="small muted" style="display:block">Toutes les notions de toutes tes matières, de A à Z</span></span>${ic('next')}</a>` : ''}` + sems.map((sem) => `
+` + sems.map((sem) => `
     <div class="between"><h2 class="section-title">${esc(semestreLabel(sem))}</h2>${sem === u.semestre ? '<span class="chip">en cours</span>' : ''}</div>
     <div class="list">${all.filter((x) => (x.m.semestre || u.semestre) === sem).map((x) => `
       <a class="card c-${x.m.couleur}" href="#/matiere/${encodeURIComponent(x.m.code)}" style="display:flex;gap:14px;align-items:center;padding:14px;text-decoration:none">
@@ -578,7 +578,7 @@ async function viewMatiere(code) {
     const ex = nextExam(m);
     const nb = cfg.n === 'tout' ? selItems.length : Math.min(cfg.n, selItems.length);
     $app.innerHTML = `
-    <div class="between">${backBtn()}<span class="row" style="gap:8px">${x.contenu.glossaire?.length ? `<a class="icon-btn" href="#/recherche/${encodeURIComponent(code)}" aria-label="Glossaire de ${esc(code)}">${ic('search')}</a>` : ''}<button class="icon-btn" id="gear" aria-label="Réglages de la matière">${ic('gear')}</button></span></div>
+    <div class="between">${backBtn()}<span class="row" style="gap:8px"><button class="icon-btn" id="gear" aria-label="Réglages de la matière">${ic('gear')}</button></span></div>
     <div class="c-${m.couleur}" style="display:flex;flex-direction:column;gap:16px">
       <div class="mat-head">
         <div style="min-width:0"><div class="code">${esc(m.code)}</div><b>${esc(m.nom)}</b>
@@ -697,6 +697,7 @@ async function viewReviser() {
   $app.innerHTML = `<div class="between"><h1>Réviser</h1><a class="icon-btn" href="#/recherche" aria-label="Rechercher une notion">${ic('search')}</a></div>
   <p class="muted" style="margin:-6px 0 0">Les fiches de tes cours, chapitre par chapitre.</p>
   ${await carteReprendre()}
+  ${S.tousContenus().some((c) => c.glossaire?.length) ? `<a class="card cfg-card" href="#/recherche" style="text-decoration:none"><span><b>Glossaire et auteur·rices</b><span class="small muted" style="display:block">Toutes les notions de toutes tes matières, de A à Z</span></span>${ic('next')}</a>` : ''}
   <h2 class="section-title">Tes matières</h2>
   ${lignes.length ? `<div class="list">${lignes.map(({ m, tot, faits }) => `<a class="card rev-mat c-${m.couleur}" href="#/reviser/${enc(m.code)}"><span class="pastille">${esc(m.code)}</span>
     <span style="flex:1;min-width:0;display:flex;flex-direction:column;gap:6px"><b>${esc(m.nom)}</b><span class="small muted">${faits ? `${faits} / ${tot} notions révisées` : `${plural(tot, 'notion')} · pas encore commencé`}</span><span class="bar"><span style="width:${tot ? Math.round((faits / tot) * 100) : 0}%"></span></span></span>${ic('next')}</a>`).join('')}</div>`
@@ -715,7 +716,7 @@ async function viewRevMatiere(code, ouvrir) {
   const render = () => {
     let total = 0, faits = 0;
     chaps.forEach((c) => notionsFiche(c).forEach((n) => { total++; if (rev[S.cleNotion(c.id, n)]) faits++; }));
-    $app.innerHTML = `<a class="icon-btn" href="#/reviser" aria-label="Retour">${ic('back')}</a>
+    $app.innerHTML = `<div class="between"><a class="icon-btn" href="#/reviser" aria-label="Retour">${ic('back')}</a>${contenu.glossaire?.length || contenu.auteurs?.length ? `<a class="chip-btn" href="#/recherche/${enc(code)}">${ic('search')}Glossaire et auteur·rices</a>` : ''}</div>
     <div class="c-${m.couleur}" style="display:flex;flex-direction:column;gap:14px">
       <div class="mat-head"><div style="min-width:0"><div class="code">${esc(m.code)}</div><b>${esc(m.nom)}</b><div class="small muted">${faits} / ${total} notions révisées</div></div></div>
       ${legendeP()}
@@ -1090,7 +1091,7 @@ const coul = (code) => S.getMatiere(code)?.couleur || 'orange';
 const puce = (code) => `<span class="chip m c-${coul(code)} sm">${esc(code)}</span>`;
 
 function viewRecherche(code) {
-  tabbar(null); setHalo(code ? coul(code) : null);
+  tabbar('#/reviser'); setHalo(code ? coul(code) : null);
   if (code !== null) RQ.code = code;
   const cs = S.tousContenus();
   const avecGloss = cs.filter((c) => c.glossaire?.length || c.auteurs?.length);

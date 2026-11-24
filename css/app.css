@@ -681,3 +681,5 @@ details.rchap[open]>summary .ic{transform:rotate(180deg)}
 .cc-num{font:800 13px 'Nunito',sans-serif;color:var(--m-ink);background:var(--m-bg);border-radius:99px;min-width:24px;height:24px;display:inline-grid;place-items:center;flex-shrink:0}
 .cc-haut{align-self:center}
 @media (min-width:700px){.fiche.doc{padding:40px 44px 32px}.cc-sec p,.cc-sec ul,.cc-sec blockquote{font-size:16px;line-height:1.6}}
+.chip-btn{display:inline-flex;align-items:center;gap:6px;min-height:44px;padding:0 14px;border-radius:99px;background:var(--card);box-shadow:var(--shadow);color:var(--ink);font-weight:800;font-size:13.5px;text-decoration:none}
+.chip-btn .ic{width:17px;height:17px}
