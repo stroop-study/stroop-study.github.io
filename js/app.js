@@ -12,7 +12,7 @@ import * as S from './store.js';
 import { today, isDue, dueDate, nextState, mastery, notionStats, seenCount, prioritize, shuffle, streak, INTERVALS, PRIO_NOMS, niveauxChapitre, filtrerOuvertes } from './leitner.js';
 import { TYPES, TYPE_KEYS, NIVEAUX, typeLabel, timeFor, formatOf, checkCourte, sameSet, resolveVariants, nbVariantes, normalize } from './types.js';
 
-const VERSION = '2.19.0';
+const VERSION = '3.0.0';
 const $app = document.getElementById('app');
 const $tab = document.getElementById('tabbar');
 const $halos = document.getElementById('halos');
@@ -49,8 +49,7 @@ const IC = {
   play: '<path d="M8 5l11 7-11 7z"/>',
   prev: '<path d="M18 6l-8 6 8 6zM6 6v12"/>',
   suiv: '<path d="M6 6l8 6-8 6zM18 6v12"/>',
-  casque: '<path d="M4 15v-3a8 8 0 0 1 16 0v3"/><rect x="3" y="14" width="4" height="6" rx="1.5"/><rect x="17" y="14" width="4" height="6" rx="1.5"/>',
-  cards: '<path d="M8 4h11v14H8zM5 7v13h11"/>',
+    cards: '<path d="M8 4h11v14H8zM5 7v13h11"/>',
   search: '<path d="M10.5 18a7.5 7.5 0 1 0 0-15 7.5 7.5 0 0 0 0 15zM16 16l5 5"/>',
   moon: '<path d="M20 14.5A8 8 0 0 1 9.5 4 8 8 0 1 0 20 14.5z"/>',
   quiz: '<path d="M5 4h14a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-8l-5 4v-4H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z"/><path d="M9.6 8.4a2.4 2.4 0 0 1 4.8 0c0 1.6-2.4 1.9-2.4 3.4M12 14.4v.1"/>',
@@ -168,7 +167,6 @@ async function route() {
     if (page === 'matieres') return await viewMatieres();
     if (page === 'recherche') return viewRecherche(arg ? decodeURIComponent(arg) : null);
     if (page === 'session') return viewSession();
-    if (page === 'ecoute') return viewEcoute();
     if (page === 'recap') return viewRecap();
     if (page === 'progres') return await viewProgres();
     if (page === 'profil') return await viewProfil(arg);
@@ -620,7 +618,6 @@ async function viewMatiere(code) {
           <button class="btn soft" id="flash" style="white-space:nowrap" ${flashItems.length ? '' : 'disabled'}>${ic('cards')}Flashcards${flashItems.length ? ` <span class="nb">${flashDue || flashItems.length}</span>` : ''}</button>
         </div>
         <button class="btn plain block" id="err" ${errItems.length ? '' : 'disabled'}>${ic('redo')}Mes erreurs · ${errItems.length}</button>
-        <button class="btn plain block" id="ecoute">${ic('casque')}Écouter ${st.sel.size ? (st.sel.size > 1 ? 'ces chapitres' : 'ce chapitre') : 'la matière'}</button>
       </div>
     </div>`;
     const quitteDepuis = () => { if (st.depuis) { st.depuis = null; } };
@@ -650,7 +647,6 @@ async function viewMatiere(code) {
     document.getElementById('err').onclick = () => startSession({ ...opts, kind: 'erreurs' });
     document.getElementById('flash').onclick = () => startSession({ ...opts, chapitres: st.sel.size ? opts.chapitres : null, kind: 'flash' });
     document.getElementById('gear').onclick = () => matiereSheet(m, render);
-    document.getElementById('ecoute').onclick = () => ecouteSheet(m, x, chaps.filter((c) => !st.sel.size || st.sel.has(c.id)));
   };
   render();
   if (!localStorage.getItem('stroop-tuto-leitner')) { localStorage.setItem('stroop-tuto-leitner', '1'); leitnerTuto(m); }
@@ -802,151 +798,6 @@ function pageSheet(m, chap, notion) {
   const p = chap.cours[pageDeNotion(chap, notion)];
   openSheet(`<div class="between"><span class="small muted" style="font-weight:800">${esc(m.code)} · ${esc(shortChap(chap.titre))}</span><button class="icon-btn" data-close aria-label="Fermer">${ic('close')}</button></div>
     <article class="fiche">${pageHtml(p, { puce: '' })}</article>`, `c-${m.couleur}`);
-}
-
-/* ================= Mode écoute ================= */
-let ecouteEtat = null;
-const ECFG = 'stroop-ecoute-cfg';
-async function ecouteSheet(m, x, chaps) {
-  const E = await import('./ecoute.js'), V = await import('./voix.js');
-  const cfg = { contenu: 'tout', n: 10, voix: 'pierre', silence: 8, vitesse: 1, ...JSON.parse(localStorage.getItem(ECFG) || '{}') };
-  const derniere = await E.retrouver(m.code);
-  const voix = V.VOIX.filter((v) => v.id === 'pierre' || v.id === 'jessica');
-  const seg = (k, opts) => `<div class="seg" data-k="${k}">${opts.map(([v, l]) => `<button data-v="${v}" aria-pressed="${String(cfg[k]) === String(v)}">${l}</button>`).join('')}</div>`;
-  const nbQ = () => x.items.filter((it) => chaps.some((c) => c.id === it.chapitre) && E.audible(it)).length;
-  const sh = openSheet(`
-    <div class="between"><h2>Écouter</h2><button class="icon-btn" data-close aria-label="Fermer">${ic('close')}</button></div>
-    <p class="small muted" style="margin:0">${chaps.length === x.contenu.chapitres.length ? 'Toute la matière' : chaps.map((c) => esc(shortChap(c.titre))).join(' · ')}. La voix est calculée sur ton téléphone : ton cours ne quitte jamais l’appli. Spotify se met en pause pendant l’écoute.</p>
-    ${derniere ? `<button class="card cfg-card" id="reprendre"><span><b>Reprendre ma dernière écoute</b><span class="small muted" style="display:block">${esc(derniere.titre || '')} · ${fmtMin(derniere.duree / 60)}${derniere.pos > 10 ? ` · reprise à ${Math.floor(derniere.pos / 60)} min ${String(Math.floor(derniere.pos % 60)).padStart(2, '0')}` : ''}</span></span>${ic('play')}</button>` : ''}
-    <div class="field">Contenu${seg('contenu', [['fiches', 'Fiches'], ['questions', 'Questions'], ['tout', 'Les deux']])}</div>
-    <div class="field" id="fN">Nombre de questions${seg('n', [[10, '10'], [20, '20'], [0, `Toutes (${nbQ()})`]])}</div>
-    <div class="field" id="fS">Silence pour répondre${seg('silence', [[5, '5 s'], [8, '8 s'], [12, '12 s']])}</div>
-    <div class="field">Voix${seg('voix', voix.map((v) => [v.id, v.nom]))}</div>
-    <div class="field">Vitesse${seg('vitesse', [[1, 'Normale'], [0.85, 'Plus lente']])}</div>
-    <span class="small muted" id="ecest"></span>
-    <button class="btn primary block" id="ecgo">${ic('casque')}Préparer l’écoute</button>`, `c-${m.couleur}`);
-  const choisir = () => {
-    let qs = x.items.filter((it) => chaps.some((c) => c.id === it.chapitre) && E.audible(it));
-    qs = shuffle(qs); if (cfg.n) qs = qs.slice(0, cfg.n);
-    const ordre = new Map(x.items.map((it, i) => [it.id, i])); qs.sort((a, b) => ordre.get(a.id) - ordre.get(b.id));
-    return E.programme({ chapitres: chaps, items: qs, contenu: cfg.contenu, silence: cfg.silence });
-  };
-  const estimer = () => {
-    const P = choisir();
-    const sec = P.reduce((a, p) => a + (p.type === 'parole' ? p.texte.length / (13.5 * cfg.vitesse) : p.type === 'silence' ? p.secondes : 0.2), 0);
-    const min = Math.max(1, Math.round(sec / 60)), prep = Math.max(1, Math.round(sec / 60 / 4));
-    sh.back.querySelector('#ecest').innerHTML = `Environ <b>${fmtMin(min)}</b> d’écoute, préparée en ${prep > 1 ? 'environ ' + prep + ' min' : 'moins d’une minute'} sur ton téléphone. Garde l’écran allumé pendant la préparation ; ensuite tu peux le verrouiller.${min > 45 ? ' C’est long : choisis moins de chapitres si ton téléphone peine.' : ''}`;
-  };
-  const maj = () => {
-    estimer();
-    sh.back.querySelectorAll('[data-k]').forEach((g) => g.querySelectorAll('[data-v]').forEach((b) => b.setAttribute('aria-pressed', String(String(cfg[g.dataset.k]) === b.dataset.v))));
-    sh.back.querySelector('#fN').style.display = sh.back.querySelector('#fS').style.display = cfg.contenu === 'fiches' ? 'none' : '';
-  };
-  sh.back.querySelectorAll('[data-k] [data-v]').forEach((b) => b.onclick = () => { const k = b.closest('[data-k]').dataset.k, v = b.dataset.v; cfg[k] = k === 'contenu' || k === 'voix' ? v : Number(v); localStorage.setItem(ECFG, JSON.stringify(cfg)); maj(); });
-  maj();
-  sh.back.querySelector('#reprendre')?.addEventListener('click', () => { sh.close(); ecouteEtat = { m, ep: derniere, pos: derniere.pos || 0 }; go('#/ecoute'); });
-  sh.back.querySelector('#ecgo').onclick = () => {
-    const P = choisir();
-    const titre = `${m.code} · ${chaps.length === 1 ? shortChap(chaps[0].titre) : plural(chaps.length, 'chapitre')} · ${{ fiches: 'fiches', questions: 'questions', tout: 'fiches et questions' }[cfg.contenu]}`;
-    sh.close(); ecouteEtat = { m, P, voix: V.VOIX.find((v) => v.id === cfg.voix), vitesse: cfg.vitesse, titre }; go('#/ecoute');
-  };
-}
-
-async function viewEcoute() {
-  const etat = ecouteEtat;
-  if (!etat) return go('#/matieres');
-  const { m } = etat; const E = await import('./ecoute.js');
-  tabbar(null); setHalo(m.couleur);
-  if (!etat.ep) {
-    let stop = false, verrou = null;
-    $app.innerHTML = `<div class="c-${m.couleur} ec-prep"><div class="between"><span class="chip m c-${m.couleur}">${esc(m.code)}</span><button class="icon-btn" id="ecx" aria-label="Annuler">${ic('close')}</button></div>
-      ${stroopImg('etude')}<h2 style="text-align:center;margin:0">Je prépare ton écoute…</h2><p class="small muted" style="text-align:center;margin:0">${esc(etat.titre)}</p>
-      <div class="bar ec-bar"><span id="ecpb" style="width:0%"></span></div><p class="small" id="ecpt" style="text-align:center;font-weight:700;margin:0">0 %</p>
-      <p class="small muted" style="text-align:center;margin:0">Garde l’écran allumé pendant la préparation.</p></div>`;
-    document.getElementById('ecx').onclick = () => { stop = true; ecouteEtat = null; go(`#/matiere/${encodeURIComponent(m.code)}`); };
-    window.addEventListener('hashchange', function f() { window.removeEventListener('hashchange', f); if (!location.hash.startsWith('#/ecoute')) stop = true; });
-    try { verrou = await navigator.wakeLock?.request('screen'); } catch {}
-    try {
-      const t0 = Date.now();
-      const ep = await E.construire(etat.P, etat.voix, { vitesse: etat.vitesse, annule: () => stop || ecouteEtat !== etat, progression: (p, txt) => {
-        const b = document.getElementById('ecpb'), t = document.getElementById('ecpt'); if (!b) return;
-        b.style.width = `${Math.round(p * 100)}%`;
-        const reste = p > 0.05 ? Math.round(((Date.now() - t0) / p) * (1 - p) / 1000) : null;
-        t.textContent = txt || `${Math.round(p * 100)} %${reste != null ? ` · encore ${reste < 60 ? reste + ' s' : Math.round(reste / 60) + ' min'}` : ''}`;
-      } });
-      ep.titre = etat.titre; etat.ep = ep; etat.pos = 0;
-      E.garder(m.code, ep);
-    } catch (e) {
-      if (stop || ecouteEtat !== etat) return;
-      $app.innerHTML = `<div class="card empty"><p><b>La préparation a échoué.</b></p><p class="small muted">${/fetch|téléchargement/i.test(e.message) ? 'Impossible de télécharger la voix : vérifie ta connexion (le Wi-Fi est préférable la première fois).' : esc(e.message)}</p><a class="btn plain" href="#/matiere/${encodeURIComponent(m.code)}">Revenir</a></div>`;
-      return;
-    } finally { try { await verrou?.release(); } catch {} }
-    if (ecouteEtat !== etat || !location.hash.startsWith('#/ecoute')) return;
-  }
-  lecteurEcoute(etat, E);
-}
-
-function lecteurEcoute(etat, E) {
-  const { m, ep } = etat; const marques = ep.marques;
-  const url = URL.createObjectURL(ep.blob);
-  const audio = new Audio(url); audio.preload = 'auto';
-  const mmss = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
-  $app.innerHTML = `<div class="c-${m.couleur} ec-lect">
-    <div class="between"><span class="chip m c-${m.couleur}">${ic('casque')} ${esc(m.code)}</span><button class="icon-btn" id="ecx" aria-label="Fermer l’écoute">${ic('close')}</button></div>
-    <p class="small muted" style="margin:0">${esc(ep.titre || '')}</p>
-    <div class="card ec-now"><span class="ec-sous" id="ecsous"></span><div class="ec-txt" id="ectxt"></div></div>
-    <input type="range" id="ecpos" min="0" max="${Math.round(ep.duree)}" step="1" value="0" aria-label="Position dans l’écoute">
-    <div class="between small muted"><span id="ecnow">0:00</span><span>${mmss(ep.duree)}</span></div>
-    <div class="ec-ctrl">
-      <button class="icon-btn" id="ecprev" aria-label="Précédent">${ic('prev')}</button>
-      <button class="icon-btn ec-10" id="ecm10" aria-label="Reculer de 10 secondes">−10</button>
-      <button class="ec-play" id="ecplay" aria-label="Lecture">${ic('play')}</button>
-      <button class="icon-btn ec-10" id="ecp10" aria-label="Avancer de 10 secondes">+10</button>
-      <button class="icon-btn" id="ecnext" aria-label="Suivant">${ic('suiv')}</button>
-    </div>
-    <p class="small muted" style="text-align:center;margin:0">Tu peux verrouiller ton téléphone : la lecture continue, avec les commandes sur l’écran verrouillé.</p></div>`;
-  const $ = (id) => document.getElementById(id);
-  let cour = -1, dernierSave = 0;
-  const idx = (t) => { let i = 0; for (let k = 0; k < marques.length; k++) if (marques[k].t <= t + 0.05) i = k; return i; };
-  const montrer = (i) => {
-    if (i === cour) return; cour = i; const mk = marques[i] || {};
-    $('ecsous').textContent = mk.sous || ''; $('ectxt').innerHTML = esc(mk.texte || '').replace(/\n/g, '<br>');
-    $('ectxt').classList.toggle('rep', !!mk.reponse);
-    if ('mediaSession' in navigator) navigator.mediaSession.metadata = new MediaMetadata({ title: mk.sous || ep.titre, artist: `Stroop Study · ${m.code}`, album: mk.titre || '', artwork: [{ src: 'assets/icons/icon-512.png', sizes: '512x512', type: 'image/png' }] });
-  };
-  let vivant = true;
-  const etatPlay = () => { if (!vivant) return; $('ecplay').innerHTML = ic(audio.paused ? 'play' : 'pause'); $('ecplay').setAttribute('aria-label', audio.paused ? 'Lecture' : 'Pause'); };
-  const aller = (t) => { audio.currentTime = Math.max(0, Math.min(ep.duree - 0.1, t)); maj(); };
-  const maj = () => {
-    if (!vivant) return;
-    const t = audio.currentTime; montrer(idx(t)); $('ecpos').value = Math.round(t); $('ecnow').textContent = mmss(t);
-    if (Math.abs(t - dernierSave) > 5) { dernierSave = t; E.memoriserPosition(m.code, t); }
-    try { navigator.mediaSession?.setPositionState?.({ duration: ep.duree, position: Math.min(t, ep.duree), playbackRate: 1 }); } catch {}
-  };
-  const prec = () => { const i = idx(audio.currentTime); aller(audio.currentTime - marques[i].t > 3 || i === 0 ? marques[i].t : marques[i - 1].t); };
-  const suiv = () => { const i = idx(audio.currentTime); if (marques[i + 1]) aller(marques[i + 1].t); };
-  const jouer = () => { try { if (navigator.audioSession) navigator.audioSession.type = 'playback'; } catch {} audio.play().catch(() => {}); };
-  audio.addEventListener('timeupdate', maj); audio.addEventListener('play', etatPlay); audio.addEventListener('pause', etatPlay);
-  audio.addEventListener('ended', () => { E.memoriserPosition(m.code, 0); etatPlay(); });
-  audio.addEventListener('loadedmetadata', () => { if (etat.pos) aller(etat.pos); });
-  $('ecplay').onclick = () => (audio.paused ? jouer() : audio.pause());
-  $('ecprev').onclick = prec; $('ecnext').onclick = suiv;
-  $('ecm10').onclick = () => aller(audio.currentTime - 10); $('ecp10').onclick = () => aller(audio.currentTime + 10);
-  $('ecpos').oninput = (e) => aller(Number(e.target.value));
-  if ('mediaSession' in navigator) {
-    const h = { play: jouer, pause: () => audio.pause(), previoustrack: prec, nexttrack: suiv, seekbackward: () => aller(audio.currentTime - 10), seekforward: () => aller(audio.currentTime + 10), seekto: (d) => aller(d.seekTime) };
-    for (const [k, f] of Object.entries(h)) { try { navigator.mediaSession.setActionHandler(k, f); } catch {} }
-  }
-  const fermer = () => {
-    vivant = false;
-    E.memoriserPosition(m.code, audio.ended ? 0 : audio.currentTime);
-    audio.pause(); audio.src = ''; URL.revokeObjectURL(url);
-    if ('mediaSession' in navigator) { for (const k of ['play', 'pause', 'previoustrack', 'nexttrack', 'seekbackward', 'seekforward', 'seekto']) { try { navigator.mediaSession.setActionHandler(k, null); } catch {} } navigator.mediaSession.metadata = null; }
-    sessionAudio(); ecouteEtat = null;
-  };
-  window.addEventListener('hashchange', function f() { window.removeEventListener('hashchange', f); fermer(); });
-  $('ecx').onclick = () => go(`#/matiere/${encodeURIComponent(m.code)}`);
-  montrer(idx(etat.pos || 0)); etatPlay(); jouer();
 }
 
 const v1 = (v) => (Array.isArray(v) ? v[0] : v);
@@ -1305,116 +1156,6 @@ function auteurSheet(c, a) {
   const cle = nom.split(' ').pop();
   const ids = R.questionsDuTerme(c, { terme: cle, aussi: a.aussi || [] });
   entreeSheet(c, { titre: a.nom, sousTitre: a.reperes || '', corps: a.apport, ids, mots: [cle, ...(a.aussi || [])], notion: a.nom });
-}
-
-/* ================= Labo écoute (test du futur mode écoute) ================= */
-// Deux tests à faire sur le téléphone : les voix françaises disponibles, et la lecture audio écran verrouillé.
-function wavBips(sec = 90) {
-  // fichier WAV généré à la volée : un bip doux toutes les 5 secondes, pour vérifier la lecture en arrière-plan
-  const sr = 16000, n = sr * sec, buf = new ArrayBuffer(44 + n * 2), v = new DataView(buf);
-  const w = (o, s) => [...s].forEach((c, i) => v.setUint8(o + i, c.charCodeAt(0)));
-  w(0, 'RIFF'); v.setUint32(4, 36 + n * 2, true); w(8, 'WAVE'); w(12, 'fmt '); v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true);
-  v.setUint32(24, sr, true); v.setUint32(28, sr * 2, true); v.setUint16(32, 2, true); v.setUint16(34, 16, true); w(36, 'data'); v.setUint32(40, n * 2, true);
-  for (let i = 0; i < n; i++) { const t = i / sr, k = t % 5; const a = k < 0.35 ? Math.sin(Math.PI * k / 0.35) * 0.35 : 0; v.setInt16(44 + i * 2, Math.round(a * Math.sin(2 * Math.PI * (k < 0.18 ? 660 : 880) * t) * 32767), true); }
-  return URL.createObjectURL(new Blob([buf], { type: 'audio/wav' }));
-}
-function laboEcoute() {
-  const synth = window.speechSynthesis;
-  const voix = () => (synth ? synth.getVoices().filter((x) => /^fr/i.test(x.lang)) : []);
-  const ua = `${/iPhone|iPad/.test(navigator.userAgent) ? 'iPhone/iPad' : /Android/.test(navigator.userAgent) ? 'Android' : 'Ordinateur'} · ${matchMedia('(display-mode: standalone)').matches || navigator.standalone ? 'appli installée' : 'navigateur'}`;
-  const sh = openSheet(`
-    <div class="between"><h2>Labo écoute</h2><button class="icon-btn" data-close aria-label="Fermer">${ic('close')}</button></div>
-    <p class="muted small" style="margin:0">Deux tests rapides pour préparer le mode écoute. Note ce qui se passe et raconte-le à Claude. (${esc(ua)})</p>
-    <div class="field">1. Les voix du téléphone<div id="lvx" class="list"></div></div>
-    <div class="field">2. Écran verrouillé<span class="small muted" style="font-weight:600">Lance le son (un bip toutes les 5 s pendant 1 min 30), verrouille ton téléphone, puis écoute : les bips continuent-ils ? Les commandes apparaissent-elles sur l’écran verrouillé ?</span>
-      <div class="two"><button class="btn soft" id="lbip">${ic('play')}Lancer les bips</button><button class="btn plain" id="lstop">Arrêter</button></div><span class="small" id="lbipetat" style="font-weight:700"></span></div>
-    <div class="field">2 bis. Avec Spotify<span class="small muted" style="font-weight:600">Lance une musique sur Spotify, reviens ici et essaie chaque façon (5 s de bips). Note pour chacune : Spotify se met-il en pause, baisse-t-il, reprend-il tout seul à la fin ?</span>
-      <div class="two"><button class="btn soft" id="lbipC">Façon C</button><button class="btn soft" id="lbipD">Façon D</button></div><div class="two"><button class="btn plain" id="lbipA">Façon A</button><button class="btn plain" id="lbipB">Façon B</button></div><span class="small" id="lbipABetat" style="font-weight:700"></span></div>
-    <div class="field">4. Voix naturelles<span class="small muted" style="font-weight:600">Calculées sur ton téléphone : le texte ne quitte jamais l’appli. Chaque voix (fichier public, sans rien de toi) se télécharge une fois, en Wi-Fi de préférence.</span>
-      <div class="pills" id="pvx"></div>
-      <div id="pmls" class="reflechir" style="display:none;gap:6px"><b class="small">125 voix différentes (femmes et hommes) : change de numéro, puis écoute</b><div class="row" style="gap:8px"><button class="btn plain sm" id="pmoins">−</button><span class="small" style="font-weight:800;flex:1;text-align:center" id="pnum">Voix n° 0</span><button class="btn plain sm" id="pplus">+</button><button class="btn plain sm" id="phasard">Au hasard</button></div></div>
-      <div class="seg" id="pvit"><button data-vit="1" aria-pressed="true">Vitesse normale</button><button data-vit="0.85" aria-pressed="false">Plus lente</button></div>
-      <label class="field"><span class="sr">Texte à lire</span><textarea id="ptxt" rows="3">Bonjour ! Je suis une voix de synthèse qui fonctionne directement sur ton téléphone. Est-ce que je te parais naturelle ?</textarea></label>
-      <button class="btn soft" id="pgo">${ic('play')}Écouter cette voix</button><span class="small" id="petat" style="font-weight:700"></span></div>
-    <div class="field">3. Voix écran verrouillé<span class="small muted" style="font-weight:600">Même test avec la voix du téléphone : lance la lecture, verrouille, écoute si elle continue.</span>
-      <button class="btn soft" id="lvoixlock">${ic('play')}Lire un long passage</button></div>`);
-  const phrase = 'Bonjour, je suis la voix du téléphone. Ceci est un simple test de lecture, pour savoir si je continue à parler quand l’écran est verrouillé.';
-  const dire = (texte, v) => { if (!synth) return toast('Synthèse vocale indisponible ici'); synth.cancel(); const u = new SpeechSynthesisUtterance(texte); u.lang = 'fr-FR'; if (v) u.voice = v; u.rate = 0.95; synth.speak(u); };
-  const remplir = () => {
-    const vs = voix();
-    sh.back.querySelector('#lvx').innerHTML = vs.length ? vs.map((x, i) => `<button class="card cfg-card" data-lv="${i}"><span><b>${esc(x.name)}</b><span class="small muted" style="display:block">${esc(x.lang)}${x.localService ? ' · sur le téléphone' : ' · en ligne'}</span></span>${ic('play')}</button>`).join('') : '<p class="small muted" style="margin:0">Aucune voix française trouvée (ou pas encore chargée).</p>';
-    sh.back.querySelectorAll('[data-lv]').forEach((b) => b.onclick = () => dire(phrase, vs[Number(b.dataset.lv)]));
-  };
-  remplir(); if (synth) synth.onvoiceschanged = remplir;
-  let audio = null;
-  sh.back.querySelector('#lbip').onclick = () => {
-    // « playback » : joue même en mode silencieux et autorise l'arrière-plan (Safari 16.4+)
-    try { if (navigator.audioSession) navigator.audioSession.type = 'playback'; } catch {}
-    const etat = sh.back.querySelector('#lbipetat');
-    audio?.pause(); audio = new Audio(wavBips()); audio.loop = false;
-    audio.onplaying = () => { etat.textContent = 'Lecture en cours : tu devrais entendre un bip toutes les 5 secondes.'; };
-    audio.onerror = () => { etat.textContent = 'Erreur de lecture du son (code ' + (audio.error?.code ?? '?') + ').'; };
-    etat.textContent = 'Démarrage…';
-    audio.play().catch((e) => { etat.textContent = 'Lecture refusée par le téléphone : ' + e.name + ' (' + e.message + ')'; });
-    if ('mediaSession' in navigator) { navigator.mediaSession.metadata = new MediaMetadata({ title: 'Test du mode écoute', artist: 'Stroop Study', artwork: [{ src: 'assets/icons/icon-512.png', sizes: '512x512', type: 'image/png' }] }); navigator.mediaSession.setActionHandler('pause', () => audio?.pause()); navigator.mediaSession.setActionHandler('play', () => audio?.play()); }
-  };
-  // A = « transient-solo » (met les autres sons en pause, ils peuvent reprendre à la fin) ; B = « playback » puis on rend la main.
-  // C = comme A, mais on libère complètement le son à la fin (élément vidé, session « auto ») ; D = Spotify baisse sans s'arrêter.
-  const essai = (type, nom, liberer = false) => {
-    const etat = sh.back.querySelector('#lbipABetat');
-    try { if (navigator.audioSession) navigator.audioSession.type = type; } catch {}
-    audio?.pause(); audio = new Audio(wavBips(5));
-    const rendre = () => {
-      if (liberer) { audio.removeAttribute('src'); audio.load(); }
-      try { if (navigator.audioSession) navigator.audioSession.type = liberer ? 'auto' : 'ambient'; } catch {}
-      etat.textContent = `${nom} terminée : Spotify a-t-il repris tout seul ?`;
-    };
-    audio.onended = rendre;
-    audio.onplaying = () => { etat.textContent = `${nom} en cours (5 s)…`; };
-    audio.play().catch((e) => { etat.textContent = `${nom} : lecture refusée (${e.name})`; });
-  };
-  sh.back.querySelector('#lbipA').onclick = () => essai('transient-solo', 'Façon A');
-  sh.back.querySelector('#lbipB').onclick = () => essai('playback', 'Façon B');
-  sh.back.querySelector('#lbipC').onclick = () => essai('transient-solo', 'Façon C', true);
-  sh.back.querySelector('#lbipD').onclick = () => essai('transient', 'Façon D', true);
-  let pvoix = 'pierre', pnum = 0, pvit = 1, nbLoc = 125;
-  import('./voix.js').then((V) => V.nettoyer()).catch(() => {});
-  const dessinerVoix = async () => {
-    const V = await import('./voix.js');
-    const box = sh.back.querySelector('#pvx');
-    box.innerHTML = (await Promise.all(V.VOIX.map(async (v) => `<button class="pill" data-pv="${v.id}" aria-pressed="${v.id === pvoix}">${v.genre === 'm' ? '♂' : v.genre === 'f' ? '♀' : '♂♀'} ${esc(v.nom)} <span class="muted">${(await V.estTelechargee(v)) ? '✓' : v.mo + ' Mo'}</span></button>`))).join('');
-    box.querySelectorAll('[data-pv]').forEach((b) => b.onclick = () => { pvoix = b.dataset.pv; dessinerVoix(); });
-    sh.back.querySelector('#pmls').style.display = pvoix === 'mls' ? 'flex' : 'none';
-    sh.back.querySelector('#pgo').innerHTML = `${ic('play')}Écouter ${pvoix === 'mls' ? `la voix MLS n° ${pnum}` : 'cette voix'}`;
-    sh.back.querySelector('#pnum').textContent = `Voix n° ${pnum} sur ${nbLoc}`;
-  };
-  dessinerVoix();
-  sh.back.querySelector('#pmoins').onclick = () => { pnum = (pnum - 1 + nbLoc) % nbLoc; dessinerVoix(); };
-  sh.back.querySelector('#pplus').onclick = () => { pnum = (pnum + 1) % nbLoc; dessinerVoix(); };
-  sh.back.querySelector('#phasard').onclick = () => { pnum = Math.floor(Math.random() * nbLoc); dessinerVoix(); };
-  sh.back.querySelectorAll('[data-vit]').forEach((b) => b.onclick = () => { pvit = Number(b.dataset.vit); sh.back.querySelectorAll('[data-vit]').forEach((x) => x.setAttribute('aria-pressed', String(x === b))); });
-  sh.back.querySelector('#pgo').onclick = async () => {
-    const etat = (t) => { sh.back.querySelector('#petat').textContent = t; };
-    const btn = sh.back.querySelector('#pgo'); btn.disabled = true;
-    try {
-      etat('Préparation…');
-      const V = await import('./voix.js');
-      const v = V.VOIX.find((x) => x.id === pvoix);
-      const t0 = performance.now();
-      const r = await V.synthese(v, sh.back.querySelector('#ptxt').value.trim() || 'Bonjour.', { locuteur: v.multi ? pnum : null, vitesse: pvit, progression: (x) => etat(`Téléchargement de la voix : ${Math.round(x * 100)} %`) });
-      const t1 = performance.now();
-      if (v.multi) nbLoc = r.nbLocuteurs;
-      try { if (navigator.audioSession) navigator.audioSession.type = 'playback'; } catch {}
-      audio?.pause(); audio = new Audio(URL.createObjectURL(r.blob));
-      audio.onended = () => sessionAudio();
-      await audio.play();
-      etat(`${v.nom}${v.multi ? ` n° ${pnum}` : ''} : ${r.secondes.toFixed(1)} s de parole, prêtes en ${((t1 - t0) / 1000).toFixed(1)} s.`);
-      dessinerVoix();
-    } catch (e) { etat('Erreur : ' + (e?.message || e)); console.error(e); }
-    btn.disabled = false;
-  };
-  sh.back.querySelector('#lstop').onclick = () => { audio?.pause(); synth?.cancel(); };
-  sh.back.querySelector('#lvoixlock').onclick = () => dire(Array(6).fill(phrase).join(' '), voix()[0]);
 }
 
 /* ================= Sessions ================= */
@@ -2139,10 +1880,10 @@ const PROFIL_SECTIONS = [
   { id: 'compte', icon: 'user', titre: 'Mon compte', sous: 'Prénom, semestre, déconnexion' },
   { id: 'rappels', icon: 'bell', titre: 'Rappels', sous: 'Heures et types' },
   { id: 'affichage', icon: 'sun', titre: 'Apparence et sons', sous: 'Thème, sons, volume' },
-  { id: 'bibliotheque', icon: 'books', titre: 'Bibliothèque', sous: 'Contenus partagés' , admin: 'Importer du contenu, invité·es' },
-  { id: 'signalements', icon: 'flag', titre: 'Signalements', sous: 'Questions à corriger' },
-  { id: 'testeurs', icon: 'chart', titre: 'Testeur·ses', sous: 'Statistiques des invité·es', adminSeul: true },
-  { id: 'aide', icon: 'help', titre: 'Aide', sous: 'Leitner, maîtrise, version' },
+  { id: 'bibliotheque', icon: 'books', titre: 'Bibliothèque', sous: 'Contenus partagés', admin: 'Importer du contenu, versions' },
+  { id: 'signalements', icon: 'flag', titre: 'Signalements', sous: 'Questions à corriger', admin: 'Mes questions à corriger' },
+  { id: 'testeurs', icon: 'chart', titre: 'Testeur·ses', sous: 'Invité·es, signalements, activité', adminSeul: true },
+  { id: 'aide', icon: 'help', titre: 'Aide', sous: 'Installer, Leitner, maîtrise, version' },
   { id: 'donnees', icon: 'download', titre: 'Mes données', sous: 'Exporter' }
 ];
 
@@ -2201,7 +1942,7 @@ async function viewProfil(section) {
   const testeurs = section === 'testeurs' && S.isAdmin() ? await testeursHtml(await S.statsTesteurs()) : '';
   const card = (html) => `<div class="card" style="padding:16px;display:flex;flex-direction:column;gap:12px">${html}</div>`;
   const etatRappels = { actif: 'Activés', inactif: 'Désactivés', bientot: 'Bientôt', installer: 'À installer', impossible: 'Indisponibles', refuse: 'Bloqués' }[N.etat()];
-  const badge = { rappels: etatRappels, signalements: (flags.length + (flagsInv?.length || 0)) ? String(flags.length + (flagsInv?.length || 0)) : '', affichage: getSons().on ? '' : 'Sons coupés' };
+  const badge = { rappels: etatRappels, signalements: flags.length ? String(flags.length) : '', testeurs: flagsInv?.length ? String(flagsInv.length) : '', affichage: getSons().on ? '' : 'Sons coupés' };
   const SEC = {
     compte: card(`
       <label class="field">Prénom<input id="prenom" value="${esc(u.prenom || '')}" autocomplete="given-name"></label>
@@ -2224,21 +1965,21 @@ async function viewProfil(section) {
       </div>
       <div id="imp" class="list"></div>`) + card(`
       <h2 class="section-title">Versions importées</h2>
-      <div id="vers">${versionsHtml()}</div>`) + card(`
-      <h2 class="section-title">Invité·es · ${(S.getAcces()?.membres || []).length}</h2>
-      <p class="muted small" style="margin:0">Ces personnes voient la même bibliothèque que toi, avec leur propre progression. Elles doivent se connecter avec cette adresse.</p>
-      <div class="list">${(S.getAcces()?.membres || []).map((e) => `<div class="between"><span>${esc(e)}</span><button class="flag-btn" data-rm="${esc(e)}">Retirer</button></div>`).join('')}</div>
-      <form id="inv" class="row"><label class="sr" for="invmail">Adresse e-mail</label><input id="invmail" type="email" placeholder="adresse@gmail.com" style="flex:1;border:2px solid var(--line);background:var(--card);border-radius:14px;padding:12px 14px;font-size:16px;min-width:0"><button class="btn primary" type="submit">Inviter</button></form>`)
+      <div id="vers">${versionsHtml()}</div>`)
       : card(`<p class="muted small" style="margin:0">${S.libOk() ? 'Tu as accès au contenu commun. Ta progression n’appartient qu’à toi.' : `Tu n’as pas encore accès au contenu commun. Donne cette adresse à l’admin : <b>${esc(auth.currentUser?.email || '')}</b>`}</p>`),
     signalements: card(`<h2 class="section-title">Mes signalements</h2>${flags.length ? `<div class="list">${flags.map((f) => `<div class="between" style="align-items:flex-start"><div><b class="small">${esc(f.matiere)} · ${esc(f.item.id)}</b><div class="small muted">${esc(itemLabel(f.item))}</div>${f.flag.note ? `<div class="small">« ${esc(f.flag.note)} »</div>` : ''}</div><button class="flag-btn" data-unflag="${esc(f.matiere)}|${esc(f.item.id)}">Retirer</button></div>`).join('')}</div>` : '<p class="muted small" style="margin:0">Aucun signalement. Pendant une session, touche « Signaler » sous une question qui te semble fausse ou mal posée.</p>'}`)
-      + (S.isAdmin() ? card(`<h2 class="section-title">Signalements des invité·es</h2>${flagsInv === null ? `<p class="muted small" style="margin:0">Pour les voir, mets à jour les règles Firebase une fois : copie-les, puis colle-les dans Firebase (<b>Firestore → Règles</b>) et clique sur <b>Publier</b>.</p><button class="btn plain block" id="copyrules">${ic('copy')}Copier les règles</button>` : flagsInv.length ? `<div class="list">${flagsInv.map((f) => `<div class="between" style="align-items:flex-start"><div><b class="small">${esc(f.code)} · ${esc(f.item)}</b> <span class="small muted">par ${esc(f.prenom || f.email || 'un·e invité·e')}</span><div class="small muted">${esc(f.it ? itemLabel(f.it) : 'Question introuvable dans le contenu actuel')}</div>${f.note ? `<div class="small">« ${esc(f.note)} »</div>` : ''}</div><button class="flag-btn" data-unflaginv="${esc(f.sid)}">Retirer</button></div>`).join('')}</div>` : '<p class="muted small" style="margin:0">Aucun signalement de tes invité·es pour l’instant.</p>'}`) : '')
-      + ((flags.length || flagsInv?.length) ? `<button class="btn plain block" id="copyflags">${ic('copy')}Copier tout pour Claude</button>` : ''),
-    aide: `<button class="card cfg-card" id="laboE"><span><b>Labo écoute</b><span class="small muted" style="display:block">2 minutes de tests pour préparer le futur mode écoute</span></span>${ic('next')}</button>
-    <button class="card cfg-card" id="instP"><span><b>Installer Stroop sur mon téléphone</b><span class="small muted" style="display:block">Le tuto iPhone et Android, à partager aussi</span></span>${ic('next')}</button>
+      + (flags.length ? `<button class="btn plain block" id="copyflags">${ic('copy')}Copier tout pour Claude</button>` : ''),
+    aide: `<button class="card cfg-card" id="instP"><span><b>Installer Stroop sur mon téléphone</b><span class="small muted" style="display:block">Le tuto iPhone et Android, à partager aussi</span></span>${ic('next')}</button>
       <button class="card cfg-card" id="tutoP"><span><b>Comment fonctionne la boîte de Leitner ?</b><span class="small muted" style="display:block">Le petit tuto des 5 boîtes</span></span>${ic('next')}</button>
       ${card(`<b>Et la maîtrise ?</b><p class="muted small" style="margin:0">Dans chaque matière, touche le cercle de maîtrise pour voir comment elle se calcule et la liste de tes notions.</p>`)}
       <p class="muted small" style="margin:0;text-align:center">Stroop Study · version ${VERSION}</p>`,
-    testeurs: testeurs,
+    testeurs: S.isAdmin() ? `${card(`
+      <h2 class="section-title">Invité·es · ${(S.getAcces()?.membres || []).length}</h2>
+      <p class="muted small" style="margin:0">Ces personnes voient la même bibliothèque que toi, avec leur propre progression. Elles doivent se connecter avec cette adresse.</p>
+      <div class="list">${(S.getAcces()?.membres || []).map((e) => `<div class="between"><span>${esc(e)}</span><button class="flag-btn" data-rm="${esc(e)}">Retirer</button></div>`).join('')}</div>
+      <form id="inv" class="row"><label class="sr" for="invmail">Adresse e-mail</label><input id="invmail" type="email" placeholder="adresse@gmail.com" style="flex:1;border:2px solid var(--line);background:var(--card);border-radius:14px;padding:12px 14px;font-size:16px;min-width:0"><button class="btn primary" type="submit">Inviter</button></form>`)}
+      ${card(`<h2 class="section-title">Leurs signalements</h2>${flagsInv === null ? `<p class="muted small" style="margin:0">Pour les voir, mets à jour les règles Firebase une fois : copie-les, puis colle-les dans Firebase (<b>Firestore → Règles</b>) et clique sur <b>Publier</b>.</p><button class="btn plain block" id="copyrules">${ic('copy')}Copier les règles</button>` : flagsInv.length ? `<div class="list">${flagsInv.map((f) => `<div class="between" style="align-items:flex-start"><div><b class="small">${esc(f.code)} · ${esc(f.item)}</b> <span class="small muted">par ${esc(f.prenom || f.email || 'un·e invité·e')}</span><div class="small muted">${esc(f.it ? itemLabel(f.it) : 'Question introuvable dans le contenu actuel')}</div>${f.note ? `<div class="small">« ${esc(f.note)} »</div>` : ''}</div><button class="flag-btn" data-unflaginv="${esc(f.sid)}">Retirer</button></div>`).join('')}</div>` : '<p class="muted small" style="margin:0">Aucun signalement de tes invité·es pour l’instant.</p>'}`)}${flagsInv?.length ? `<button class="btn plain block" id="copyflags">${ic('copy')}Copier pour Claude</button>` : ''}
+      <h2 class="section-title" style="margin-top:4px">Leur activité</h2>${testeurs}` : '',
     donnees: card(`<p class="muted small" style="margin:0">Télécharge une copie de ta progression et de tes réglages (fichier .json).</p><button class="btn plain block" id="export">${ic('download')}Exporter mes données</button>`)
   };
   const sec = PROFIL_SECTIONS.find((x) => x.id === section && (!x.adminSeul || S.isAdmin()));
@@ -2304,13 +2045,12 @@ async function viewProfil(section) {
   });
   $app.querySelectorAll('[data-unflag]').forEach((b) => b.onclick = async () => { const [c, id] = b.dataset.unflag.split('|'); await S.unflagItem(c, id); viewProfil(section); });
   document.getElementById('copyflags')?.addEventListener('click', async () => {
-    const txt = 'Signalements de mon appli de révisions :\n\n' + flags.map((f) => `- ${f.matiere} · ${f.item.id} · « ${itemLabel(f.item)} »${f.flag.note ? ` → ${f.flag.note}` : ''}`).join('\n')
-      + ((flagsInv || []).length ? '\n\nSignalements de mes invité·es :\n\n' + flagsInv.map((f) => `- ${f.code} · ${f.item}${f.it ? ` · « ${itemLabel(f.it)} »` : ''} (${f.prenom || f.email || 'invité·e'})${f.note ? ` → ${f.note}` : ''}`).join('\n') : '');
+    const txt = (section === 'testeurs' ? '' : 'Signalements de mon appli de révisions :\n\n' + flags.map((f) => `- ${f.matiere} · ${f.item.id} · « ${itemLabel(f.item)} »${f.flag.note ? ` → ${f.flag.note}` : ''}`).join('\n'))
+      + (section === 'testeurs' && (flagsInv || []).length ? 'Signalements de mes invité·es :\n\n' + flagsInv.map((f) => `- ${f.code} · ${f.item}${f.it ? ` · « ${itemLabel(f.it)} »` : ''} (${f.prenom || f.email || 'invité·e'})${f.note ? ` → ${f.note}` : ''}`).join('\n') : '');
     try { await navigator.clipboard.writeText(txt); toast('Copié ! Colle-le dans ta conversation avec Claude'); } catch { toast('Copie impossible sur cet appareil'); }
   });
   const tutoP = document.getElementById('tutoP'); if (tutoP) tutoP.onclick = () => leitnerTuto(null);
   const instP = document.getElementById('instP'); if (instP) instP.onclick = () => installSheet();
-  const laboE = document.getElementById('laboE'); if (laboE) laboE.onclick = () => laboEcoute();
   const exp = document.getElementById('export'); if (exp) exp.onclick = async () => {
     const data = await S.exportAll();
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
@@ -2321,6 +2061,8 @@ async function viewProfil(section) {
 }
 
 /* ================= Démarrage ================= */
+// 3.0 : le mode écoute n'existe plus ; on libère la place qu'il occupait (voix, écoutes préparées).
+try { for (const k of Object.keys(localStorage)) if (k.startsWith('stroop-ecoute')) localStorage.removeItem(k); } catch { /* rien */ }
 getRedirectResult(auth).catch((e) => { if (!auth.currentUser) viewLogin('google', authError(e)); });
 onAuthStateChanged(auth, async (user) => {
   currentUser = user;
@@ -2331,7 +2073,7 @@ onAuthStateChanged(auth, async (user) => {
     if (u.theme && !localStorage.getItem('theme')) { localStorage.setItem('theme', u.theme); applyTheme(); }
     await Promise.all([S.loadAcces(), S.loadLibrary()]);
     route();
-    // Demande à iOS de ne pas effacer les données de l'appli (réponses pas encore envoyées, voix) en cas de place manquante.
+    // Demande à iOS de ne pas effacer les données de l'appli (réponses pas encore envoyées) en cas de place manquante.
     navigator.storage?.persist?.().catch(() => {});
   } catch (e) {
     console.error(e);

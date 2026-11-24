@@ -508,20 +508,6 @@ body.nuit #halos{opacity:.35}
 .ry-info .ry-s{font-size:12px;color:var(--muted);display:flex;flex-wrap:wrap;gap:4px 10px}
 .ry-m{display:inline-flex;align-items:center;gap:4px}
 
-/* Mode écoute */
-.ec-prep,.ec-lect{display:flex;flex-direction:column;gap:14px}
-.ec-prep .stroop{align-self:center}
-.ec-bar{height:10px;border-radius:999px;background:var(--ghost);overflow:hidden}.ec-bar span{display:block;height:100%;background:var(--m-acc,var(--cta));border-radius:999px;transition:width .3s}
-.ec-now{display:flex;flex-direction:column;gap:8px;padding:18px;min-height:260px;max-height:46vh;overflow:auto}
-.ec-sous{font-size:12px;font-weight:800;letter-spacing:.3px;text-transform:uppercase;color:var(--m-ink,var(--muted))}
-.ec-txt{font-size:18px;font-weight:600;line-height:1.45}
-.ec-txt.rep{color:var(--m-ink,var(--ink))}
-.ec-lect input[type=range]{width:100%;accent-color:var(--m-acc,var(--cta))}
-.ec-ctrl{display:flex;align-items:center;justify-content:space-between;gap:8px}
-.ec-play{width:72px;height:72px;border-radius:50%;border:none;background:var(--m-acc,var(--cta));color:#fff;display:grid;place-items:center;cursor:pointer}
-.ec-play .ic{width:30px;height:30px;fill:currentColor}
-.ec-10{font-weight:800;font-size:14px}
-
 /* 2.15 — audit : sélection neutre (vert et rouge réservés à la correction), correction en 3 états */
 .choice[aria-pressed="true"]{border-color:var(--ink)}
 .choice[aria-pressed="true"] .mk{background:var(--ink);border-color:var(--ink);color:var(--bg)}

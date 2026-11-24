@@ -1,16 +1,14 @@
 // Service worker : met l'appli en cache pour qu'elle s'ouvre même sans réseau.
 // Les données (cartes, progression) sont gérées hors ligne par Firestore, pas ici.
-const VERSION = 'v2.19.0';
+const VERSION = 'v3.0.0';
 const CACHE = `stroop-${VERSION}`;
-// Moteur de voix (gros fichiers qui ne changent pas) : cache séparé, gardé d'une version à l'autre.
-const VENDOR = 'vendor-piper-1';
 // SDK Firebase et polices hébergés dans l'appli (aucun CDN) : cache séparé, nommé d'après la version du SDK.
 const VENDOR_FB = 'vendor-fb-10.12.2';
 const FB_FILES = ['vendor/firebase/firebase-app.js', 'vendor/firebase/firebase-auth.js', 'vendor/firebase/firebase-firestore.js', 'vendor/firebase/firebase-messaging.js',
   'vendor/fonts/fonts.css', ...[1, 2, 3, 4, 5, 6, 7].map((i) => `vendor/fonts/f${i}.woff2`)];
 const SHELL = [
   './', 'index.html', 'manifest.webmanifest', 'css/app.css',
-  'js/app.js', 'js/store.js', 'js/leitner.js', 'js/types.js', 'js/recherche.js', 'js/voix.js', 'js/ecoute.js', 'js/figures.js', 'js/fiches.js', 'js/sons.js', 'js/notifs.js', 'js/firebase.js', 'js/firebase-config.js'
+  'js/app.js', 'js/store.js', 'js/leitner.js', 'js/types.js', 'js/recherche.js', 'js/figures.js', 'js/fiches.js', 'js/sons.js', 'js/notifs.js', 'js/firebase.js', 'js/firebase-config.js'
 ];
 // Images et icônes : cache séparé, gardé d'une version à l'autre (changer son nom si une image change).
 const ASSETS = 'assets-2';
@@ -32,7 +30,7 @@ self.addEventListener('install', (e) => {
 
 self.addEventListener('activate', (e) => {
   e.waitUntil(
-    caches.keys().then((keys) => Promise.all(keys.filter((k) => (k.startsWith('stroop-') && k !== CACHE) || (k.startsWith('vendor-fb-') && k !== VENDOR_FB) || (k.startsWith('assets-') && k !== ASSETS)).map((k) => caches.delete(k))))
+    caches.keys().then((keys) => Promise.all(keys.filter((k) => (k.startsWith('stroop-') && k !== CACHE) || (k.startsWith('vendor-fb-') && k !== VENDOR_FB) || (k.startsWith('assets-') && k !== ASSETS) || k.startsWith('vendor-piper') || k.startsWith('voix-modeles') || k.startsWith('ecoute-')).map((k) => caches.delete(k))))
       .then(() => self.clients.claim())
   );
 });
@@ -52,17 +50,13 @@ self.addEventListener('fetch', (e) => {
     return;
   }
 
-  if (sameOrigin && url.pathname.includes('/vendor/')) {
-    e.respondWith(caches.open(VENDOR).then((c) => c.match(req).then((hit) => hit || fetch(req).then((res) => { if (res.ok) c.put(req, res.clone()); return res; }))));
-    return;
-  }
   if (url.pathname.includes('/assets/')) {
     e.respondWith(caches.open(ASSETS).then((c) => c.match(req, { ignoreSearch: true }).then((hit) => hit || fetch(req).then((res) => { if (res.ok) c.put(req, res.clone()); return res; }))));
     return;
   }
   // Appli : cache d'abord, ouverture immédiate même en réseau faible. Les mises à jour arrivent par sw.js
   // (le navigateur le vérifie à chaque ouverture) : une nouvelle version remplit un nouveau cache complet.
-  // Les fichiers hors du pré-cache (firestore.rules, voix…) restent servis par le réseau.
+  // Les fichiers hors du pré-cache (firestore.rules…) restent servis par le réseau.
   e.respondWith(caches.open(CACHE).then((c) => c.match(req, { ignoreSearch: req.mode === 'navigate' }).then((hit) => {
     if (hit) return hit;
     return fetch(req).catch(() => (req.mode === 'navigate' ? c.match('index.html') : Response.error()));
