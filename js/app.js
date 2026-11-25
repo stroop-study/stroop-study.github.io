@@ -12,7 +12,7 @@ import * as S from './store.js';
 import { today, isDue, dueDate, nextState, mastery, notionStats, seenCount, prioritize, shuffle, streak, INTERVALS, PRIO_NOMS, niveauxChapitre, filtrerOuvertes } from './leitner.js';
 import { TYPES, TYPE_KEYS, NIVEAUX, typeLabel, timeFor, formatOf, checkCourte, sameSet, resolveVariants, nbVariantes, normalize } from './types.js';
 
-const VERSION = '3.2.2';
+const VERSION = '3.2.4';
 const $app = document.getElementById('app');
 const $tab = document.getElementById('tabbar');
 const $halos = document.getElementById('halos');
@@ -570,7 +570,7 @@ async function viewMatiere(code) {
     const dansSel = (it) => (!st.sel.size || st.sel.has(it.chapitre)) && (!st.notions[it.chapitre] || st.notions[it.chapitre].has(it.notion)); // rien de coché = toute la matière
     const nbNotions = Object.values(st.notions).reduce((a, n) => a + n.size, 0);
     const portee = st.depuis ? plural(nbNotions, 'notion') : !st.sel.size || (st.sel.size === chaps.length && !nbNotions) ? 'Toute la matière' : nbNotions ? `${plural(st.sel.size, 'chapitre')}, notions choisies` : plural(st.sel.size, 'chapitre');
-    const selItems = filtrerOuvertes(x.items.filter((it) => dansSel(it) && matchCfg(it, cfg)), x.prog, cfg.toutOuvrir, x.items);
+    const selItems = filtrerOuvertes(x.items.filter((it) => dansSel(it) && matchCfg(it, cfg)), x.prog, cfg.toutOuvrir || !!st.depuis, x.items);
     const errItems = x.items.filter((it) => dansSel(it) && x.prog[it.id]?.err && it.type !== 'flashcard');
     const flashItems = x.items.filter((it) => it.type === 'flashcard' && dansSel(it));
     const flashDue = flashItems.filter((it) => { const p = x.prog[it.id]; return !p || !p.box || isDue(p); }).length;
@@ -644,7 +644,7 @@ async function viewMatiere(code) {
     document.getElementById('tuto').onclick = () => leitnerTuto(m);
     $app.querySelectorAll('[data-box]').forEach((b) => b.onclick = () => boxSheet(m, x, Number(b.dataset.box)));
     document.getElementById('cfg').onclick = () => cfgSheet(m, x, st, render);
-    const opts = { code, chapitres: [...st.sel], notions: Object.keys(st.notions).length ? Object.fromEntries(Object.entries(st.notions).map(([k, v]) => [k, [...v]])) : null };
+    const opts = { code, chapitres: [...st.sel], notions: Object.keys(st.notions).length ? Object.fromEntries(Object.entries(st.notions).map(([k, v]) => [k, [...v]])) : null, ouvrir: !!st.depuis };
     document.getElementById('go').onclick = () => startSession({ ...opts, kind: 'normal' });
     document.getElementById('rafale').onclick = () => startSession({ ...opts, kind: 'rafale' });
     document.getElementById('err').onclick = () => startSession({ ...opts, kind: 'erreurs' });
@@ -1203,7 +1203,7 @@ function loadSaved() {
   } catch { return null; }
 }
 
-async function startSession({ code, chapitres = null, notions = null, kind = 'normal', ids = null, titre = null }) {
+async function startSession({ code, chapitres = null, notions = null, kind = 'normal', ids = null, titre = null, ouvrir = false }) {
   const contenu = await S.getContenu(code);
   const prog = await S.getProgres(code);
   const cfg = kind === 'jour' ? { types: TYPE_KEYS, n: 12, niveau: 'tous', chrono: getCfg(code).chrono } : getCfg(code);
@@ -1225,7 +1225,7 @@ async function startSession({ code, chapitres = null, notions = null, kind = 'no
   else if (kind === 'flash') items = prioritize(filtrerOuvertes(items.filter((it) => it.type === 'flashcard'), prog, cfg.toutOuvrir, items), prog).slice(0, 20);
   else if (kind === 'erreurs') items = shuffle(items.filter((it) => prog[it.id]?.err && it.type !== 'flashcard'));
   else {
-    items = filtrerOuvertes(items.filter((it) => matchCfg(it, cfg)), prog, cfg.toutOuvrir, items);
+    items = filtrerOuvertes(items.filter((it) => matchCfg(it, cfg)), prog, cfg.toutOuvrir || ouvrir, items);
     if (kind === 'rafale') items = prioritize(items, prog);
     else items = prioritize(items, prog).slice(0, cfg.n === 'tout' ? items.length : cfg.n);
   }
@@ -1271,7 +1271,7 @@ async function viewSession() {
   let it = resolveVariants(byId[session.ids[session.i]], session.vix?.[session.i] ?? null);
   // QCM : une fois sur deux, une mauvaise proposition est retirée au hasard (jamais une bonne : l'explication
   // peut la citer), pour que le nombre de propositions varie. Il reste toujours au moins une mauvaise réponse.
-  if (formatOf(it) === 'qcm' && !it.lettres && it.choix?.length >= 4 && it.choix.length - it.bonnes.length >= 2 && Math.random() < 0.5) {
+  if (formatOf(it) === 'qcm' && !it.lettres && !m.modalites?.some((x) => x.type === 'qcm') && it.choix?.length >= 4 && it.choix.length - it.bonnes.length >= 2 && Math.random() < 0.5) {
     const candidats = it.choix.map((_, i) => i).filter((i) => !it.bonnes.includes(i));
     const retire = candidats[Math.floor(Math.random() * candidats.length)];
     const garde = it.choix.map((_, i) => i).filter((i) => i !== retire);
@@ -1349,7 +1349,7 @@ async function viewSession() {
     if (r && r.id === it.id) { r.correct = true; r.after = ns.box; r.practice = ns.practice; }
     session.score += 1; saveSession(); render();
   };
-  const advance = () => { clearInterval(qTimerId); logTime(); session.i++; saveSession(); viewSession(); };
+  const advance = () => { clearInterval(qTimerId); logTime(); session.i++; saveSession(); window.scrollTo(0, 0); viewSession(); };
 
   const head = () => `
     <div class="sess-top">
@@ -1543,10 +1543,12 @@ async function viewSession() {
     if (red) red.oninput = () => { st.text = red.value; };
     document.getElementById('voirRed')?.addEventListener('click', () => { st.vu = true; son('flip'); render(); });
     $app.querySelectorAll('[data-pt]').forEach((b) => b.onclick = () => { const i = Number(b.dataset.pt); st.points.has(i) ? st.points.delete(i) : st.points.add(i); son('tap'); render(); });
-    document.getElementById('valRed')?.addEventListener('click', async () => { await answer(st.points.size / it.attendus.length >= 0.7); render(); });
+    document.getElementById('valRed')?.addEventListener('click', async () => { await answer(st.points.size / it.attendus.length >= 0.7); render(); montrer(); });
     const val = document.getElementById('val');
-    if (val) val.onclick = async () => { await answer(grade()); render(); };
-    document.getElementById('skip')?.addEventListener('click', async () => { st.skip = true; await answer(false, { skip: true }); render(); });
+    // Après la réponse, on amène la correction et « Continuer » à l’écran (sinon il faut faire défiler).
+    const montrer = () => { const fb = $app.querySelector('.feedback') || document.getElementById('next'); if (fb) { const y = fb.getBoundingClientRect().top + window.scrollY - 90; if (y > window.scrollY) window.scrollTo({ top: y, behavior: calme() ? 'auto' : 'smooth' }); } };
+    if (val) val.onclick = async () => { await answer(grade()); render(); montrer(); };
+    document.getElementById('skip')?.addEventListener('click', async () => { st.skip = true; await answer(false, { skip: true }); render(); montrer(); });
     document.getElementById('next')?.addEventListener('click', advance);
     document.getElementById('pif')?.addEventListener('click', togglePif);
     document.getElementById('jaibon')?.addEventListener('click', requalifier);

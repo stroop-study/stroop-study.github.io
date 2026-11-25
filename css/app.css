@@ -683,3 +683,4 @@ details.rchap[open]>summary .ic{transform:rotate(180deg)}
 @media (min-width:700px){.fiche.doc{padding:40px 44px 32px}.cc-sec p,.cc-sec ul,.cc-sec blockquote{font-size:16px;line-height:1.6}}
 .chip-btn{display:inline-flex;align-items:center;gap:6px;min-height:44px;padding:0 14px;border-radius:99px;background:var(--card);box-shadow:var(--shadow);color:var(--ink);font-weight:800;font-size:13.5px;text-decoration:none}
 .chip-btn .ic{width:17px;height:17px}
+.sheet>*{flex-shrink:0} /* sinon la fiche se tasse à la hauteur de la feuille et ne défile plus */
