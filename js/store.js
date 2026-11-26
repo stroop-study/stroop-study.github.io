@@ -360,6 +360,10 @@ export async function importContenu(data, nomFichier = '', { forcer = false } = 
     e.ancienne = { code, actuelle, revision }; throw e;
   }
   const glossaire = Array.isArray(data.glossaire) ? data.glossaire : [], auteurs = Array.isArray(data.auteurs) ? data.auteurs : [];
+  // Garde-fou : un document Firestore ne peut pas dépasser 1 Mio. Au-delà de 900 Ko, l'écriture échouerait.
+  const taille = new Blob([JSON.stringify(data.chapitres) + JSON.stringify(glossaire) + JSON.stringify(auteurs) + JSON.stringify(data.matiere)]).size;
+  if (taille > 900 * 1024) throw new Error(`${code} pèse ${Math.round(taille / 1024)} Ko : trop lourd pour être enregistré (limite d’environ 1 Mo). Rien n’a été remplacé : signale-le à Claude.`);
+  info.taille = taille;
   await setDoc(contenuRef(code), { matiere: data.matiere, chapitresJson: JSON.stringify(data.chapitres), glossaireJson: JSON.stringify(glossaire), auteursJson: JSON.stringify(auteurs), version: data.version || 1, importeLe, revision, fichier });
   state.contenu[code] = { matiere: data.matiere, chapitres: data.chapitres, glossaire, auteurs, importeLe, revision, fichier };
   info.glossaire = glossaire.length; info.auteurs = auteurs.length;
@@ -380,7 +384,8 @@ export async function importContenu(data, nomFichier = '', { forcer = false } = 
 
 /** Export complet des données de l'utilisatrice. */
 export async function exportAll() {
-  const out = { exporteLe: new Date().toISOString(), user: state.user, contenu: { ...state.contenu }, progres: {} };
+  // Le contenu des cours n’est jamais exporté (bibliothèque privée) : seulement ta progression et tes réglages.
+  const out = { exporteLe: new Date().toISOString(), user: state.user, progres: {} };
   const snap = await getDocs(collection(db, 'users', state.uid, 'progres'));
   snap.forEach((d) => { out.progres[d.id] = d.data(); });
   return out;

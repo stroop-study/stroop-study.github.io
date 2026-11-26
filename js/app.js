@@ -6,13 +6,13 @@ import * as N from './notifs.js';
 import { pageHtml, pageDeNotion, titreSurligne, completHtml } from './fiches.js';
 import {
   auth, onAuthStateChanged, GoogleAuthProvider, signInWithPopup, signInWithRedirect, getRedirectResult,
-  sendEmailVerification, signInWithEmailAndPassword, createUserWithEmailAndPassword, sendPasswordResetEmail, signOut
+  sendEmailVerification, signInWithEmailAndPassword, createUserWithEmailAndPassword, sendPasswordResetEmail, signOut, deconnexionComplete
 } from './firebase.js';
 import * as S from './store.js';
 import { today, isDue, dueDate, nextState, mastery, notionStats, seenCount, prioritize, shuffle, streak, INTERVALS, PRIO_NOMS, niveauxChapitre, filtrerOuvertes } from './leitner.js';
 import { TYPES, TYPE_KEYS, NIVEAUX, typeLabel, timeFor, formatOf, checkCourte, sameSet, resolveVariants, nbVariantes, normalize } from './types.js';
 
-const VERSION = '3.2.4';
+const VERSION = '3.3.0';
 const $app = document.getElementById('app');
 const $tab = document.getElementById('tabbar');
 const $halos = document.getElementById('halos');
@@ -392,7 +392,7 @@ async function viewSetup(uid) {
   </section>`;
   document.getElementById('copy').onclick = async () => { try { await navigator.clipboard.writeText(rules); toast('Règles copiées !'); } catch { toast('Copie impossible : sélectionne le texte à la main'); } };
   document.getElementById('retry').onclick = () => location.reload();
-  document.getElementById('out').onclick = () => signOut(auth);
+  document.getElementById('out').onclick = () => deconnexionComplete(auth.currentUser?.uid);
 }
 
 /* ================= Accueil ================= */
@@ -410,7 +410,12 @@ async function viewHome() {
   // Matière de la session du jour : le plus de cartes à revoir + jamais vues, avec un bonus si un examen
   // approche (rien ne change tant qu’aucune date d’examen n’est renseignée).
   const poidsExam = (x) => { const e = nextExam(x.m); if (!e) return 1; const d = daysUntil(e.t); return d <= 30 ? 1 + (30 - d) / 15 : 1; };
-  const best = [...avecContenu].sort((a, b) => (b.due + b.neufs) * poidsExam(b) - (a.due + a.neufs) * poidsExam(a))[0];
+  // Rotation (Amandine, 26/11) : la matière dont la dernière session du jour est la plus ancienne passe
+  // en premier ; les cartes à revoir accumulées et un examen proche la font remonter.
+  let derniers = {}; try { derniers = JSON.parse(localStorage.getItem('stroop-jour-dernier') || '{}'); } catch {}
+  const attente = (x) => Math.min(7, derniers[x.m.code] ? Math.floor((Date.now() - derniers[x.m.code]) / 864e5) : 7);
+  const scoreJour = (x) => (x.due + x.neufs ? (attente(x) + Math.min(x.due, 40) / 10) * poidsExam(x) : -1);
+  const best = [...avecContenu].sort((a, b) => scoreJour(b) - scoreJour(a))[0];
   const todo = best ? Math.min(12, best.due + best.neufs) : 0;
 
   let bubble;
@@ -467,7 +472,10 @@ async function viewHome() {
     if (last && last.id === session.ids[session.i]) session.i++;
     go('#/session');
   });
-  document.getElementById('daily')?.addEventListener('click', () => startSession({ code: best.m.code, kind: 'jour' }));
+  document.getElementById('daily')?.addEventListener('click', () => {
+    try { localStorage.setItem('stroop-jour-dernier', JSON.stringify({ ...derniers, [best.m.code]: Date.now() })); } catch {}
+    startSession({ code: best.m.code, kind: 'jour' });
+  });
   document.getElementById('nuit')?.addEventListener('click', () => nuitSheet(avecContenu.filter((x) => x.flashTot)));
   bindInstallBanner();
   if (N.proposer(u)) setTimeout(() => { if (location.hash === '' || location.hash === '#/') inviteNotif(); }, 900);
@@ -2007,7 +2015,7 @@ async function viewProfil(section) {
       <div id="imp" class="list"></div>`) + card(`
       <h2 class="section-title">Versions importées</h2>
       <div id="vers">${versionsHtml()}</div>`)
-      : card(`<p class="muted small" style="margin:0">${S.libOk() ? 'Tu as accès au contenu commun. Ta progression n’appartient qu’à toi.' : `Tu n’as pas encore accès au contenu commun. Donne cette adresse à l’admin : <b>${esc(auth.currentUser?.email || '')}</b>`}</p>`),
+      : card(`<p class="muted small" style="margin:0">${S.libOk() ? 'Tu as accès au contenu commun. Ta progression est liée à ton compte ; l’administratrice de l’appli peut voir tes statistiques de testeur·se (temps, réponses, signalements).' : `Tu n’as pas encore accès au contenu commun. Donne cette adresse à l’admin : <b>${esc(auth.currentUser?.email || '')}</b>`}</p>`),
     signalements: card(`<h2 class="section-title">Mes signalements</h2>${flags.length ? `<div class="list">${flags.map((f) => `<div class="between" style="align-items:flex-start"><div><b class="small">${esc(f.matiere)} · ${esc(f.item.id)}</b><div class="small muted">${esc(itemLabel(f.item))}</div>${f.flag.note ? `<div class="small">« ${esc(f.flag.note)} »</div>` : ''}</div><button class="flag-btn" data-unflag="${esc(f.matiere)}|${esc(f.item.id)}">Retirer</button></div>`).join('')}</div>` : '<p class="muted small" style="margin:0">Aucun signalement. Pendant une session, touche « Signaler » sous une question qui te semble fausse ou mal posée.</p>'}`)
       + (S.isAdmin() ? card(`<h2 class="section-title">Signalements des invité·es</h2>${flagsInv === null ? `<p class="muted small" style="margin:0">Pour les voir, mets à jour les règles Firebase une fois : copie-les, puis colle-les dans Firebase (<b>Firestore → Règles</b>) et clique sur <b>Publier</b>.</p><button class="btn plain block" id="copyrules">${ic('copy')}Copier les règles</button>` : flagsInv.length ? `<div class="list">${flagsInv.map((f) => `<div class="between" style="align-items:flex-start"><div><b class="small">${esc(f.code)} · ${esc(f.item)}</b> <span class="small muted">par ${esc(f.prenom || f.email || 'un·e invité·e')}</span><div class="small muted">${esc(f.it ? itemLabel(f.it) : 'Question introuvable dans le contenu actuel')}</div>${f.note ? `<div class="small">« ${esc(f.note)} »</div>` : ''}</div><button class="flag-btn" data-unflaginv="${esc(f.sid)}">Retirer</button></div>`).join('')}</div>` : '<p class="muted small" style="margin:0">Aucun signalement de tes invité·es pour l’instant.</p>'}`) : '')
       + ((flags.length || flagsInv?.length) ? `<button class="btn plain block" id="copyflags">${ic('copy')}Copier tout pour Claude</button>` : ''),
@@ -2097,7 +2105,7 @@ ${testeurs}` : '',
     const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `stroop-study-export-${today()}.json`; a.click();
     setTimeout(() => URL.revokeObjectURL(a.href), 2000);
   };
-  const lo = document.getElementById('logout'); if (lo) lo.onclick = async () => { session = null; clearSaved(); await signOut(auth); };
+  const lo = document.getElementById('logout'); if (lo) lo.onclick = async () => { if (!confirm('Te déconnecter ? Tes cours et ta progression seront effacés de cet appareil (ils restent dans ton compte).')) return; session = null; clearSaved(); await deconnexionComplete(S.getUser()?.uid || auth.currentUser?.uid); };
 }
 
 /* ================= Démarrage ================= */
