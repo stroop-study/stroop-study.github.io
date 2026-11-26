@@ -23,6 +23,7 @@ async function rapide(ref, plusTard) {
   const serveur = getDoc(ref);
   const r = await Promise.race([serveur.then((s) => ({ s }), (e) => ({ e })), new Promise((res) => setTimeout(() => res(null), LENT))]);
   if (r?.s) return r.s;
+  if (r?.e?.code === 'permission-denied') throw r.e; // jamais de cache quand le serveur refuse
   try {
     const c = await getDocFromCache(ref);
     if (!r && plusTard) serveur.then(plusTard).catch(() => {});
@@ -104,6 +105,7 @@ export async function loadLibrary() {
     const serveur = getDocs(collection(db, 'bibliotheque'));
     const r = await Promise.race([serveur.then((s) => ({ s }), (e) => ({ e })), new Promise((res) => setTimeout(() => res(null), LENT))]);
     if (r?.s) lire(r.s);
+    else if (r?.e?.code === 'permission-denied') throw r.e; // pas d’accès : surtout ne pas lire le cache d’un autre compte
     else {
       // Serveur lent ou injoignable : la copie locale d'abord, la version du serveur dès qu'elle arrive.
       let n = 0;
