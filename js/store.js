@@ -1,5 +1,5 @@
 // Couche de données : lecture et écriture dans Firestore, avec un petit cache en mémoire.
-import { db, doc, getDoc, getDocFromCache, setDoc, collection, getDocs, getDocsFromCache, increment } from './firebase.js';
+import { db, doc, getDoc, getDocFromCache, setDoc, collection, getDocs, getDocsFromCache, writeBatch, increment } from './firebase.js';
 import { today } from './leitner.js';
 import { checkFigure } from './figures.js';
 
@@ -35,6 +35,16 @@ const withTimeout = (p, ms = 6000) => Promise.race([p, new Promise((_, rej) => s
 const userRef = () => doc(db, 'users', state.uid);
 // Le contenu est dans une bibliothèque commune, gérée par l'admin et lisible par les invités.
 const contenuRef = (code) => doc(db, 'bibliotheque', code);
+// Depuis 3.4.0, chaque chapitre a son propre document (bibliotheque/{code}/chapitres/{id}) : plus de plafond
+// d'environ 1 Mo par matière. Le document de la matière n'est plus qu'un sommaire ({ id, h } par chapitre).
+const chapitreRef = (code, id) => doc(db, 'bibliotheque', code, 'chapitres', id);
+const chapitresCol = (code) => collection(db, 'bibliotheque', code, 'chapitres');
+/** Empreinte courte d'un texte (FNV-1a + longueur) : sert à ne réécrire et retélécharger que les chapitres modifiés. */
+function empreinte(t) {
+  let h = 2166136261;
+  for (let i = 0; i < t.length; i++) { h ^= t.charCodeAt(i); h = Math.imul(h, 16777619); }
+  return (h >>> 0).toString(36) + '-' + t.length.toString(36);
+}
 const accesRef = () => doc(db, 'config', 'acces');
 const progresRef = (code) => doc(db, 'users', state.uid, 'progres', code);
 
@@ -101,16 +111,21 @@ export async function loadAcces() {
 /** Charge toute la bibliothèque commune et ajoute ses matières à la liste de la personne. */
 export async function loadLibrary() {
   try {
-    const lire = (snap) => { let n = 0; snap.forEach((d) => { state.contenu[d.id] = decodeContenu(d.data()); n++; }); return n; };
+    const lire = async (snap, cacheSeul = false) => {
+      const docs = []; snap.forEach((d) => docs.push(d));
+      const res = await Promise.all(docs.map((d) => decodeContenu(d.id, d.data(), cacheSeul)));
+      docs.forEach((d, i) => { if (res[i] || !state.contenu[d.id]) state.contenu[d.id] = res[i]; });
+      return docs.length;
+    };
     const serveur = getDocs(collection(db, 'bibliotheque'));
     const r = await Promise.race([serveur.then((s) => ({ s }), (e) => ({ e })), new Promise((res) => setTimeout(() => res(null), LENT))]);
-    if (r?.s) lire(r.s);
+    if (r?.s) await lire(r.s);
     else if (r?.e?.code === 'permission-denied') throw r.e; // pas d’accès : surtout ne pas lire le cache d’un autre compte
     else {
       // Serveur lent ou injoignable : la copie locale d'abord, la version du serveur dès qu'elle arrive.
       let n = 0;
-      try { n = lire(await getDocsFromCache(collection(db, 'bibliotheque'))); } catch { n = 0; }
-      if (!n) lire(await withTimeout(serveur, 10000));
+      try { n = await lire(await getDocsFromCache(collection(db, 'bibliotheque')), true); } catch { n = 0; }
+      if (!n) await lire(await withTimeout(serveur, 10000));
       else if (!r) serveur.then(lire).catch(() => {});
     }
     state.libOk = true;
@@ -130,16 +145,30 @@ export async function loadLibrary() {
   return true;
 }
 
-/** Firestore refuse les tableaux imbriqués : les chapitres sont donc stockés en texte JSON. */
-function decodeContenu(d) {
+/** Firestore refuse les tableaux imbriqués : les chapitres sont donc stockés en texte JSON.
+ * Ancien format : tout dans `chapitresJson`. Format 2 (3.4.0) : un sommaire `index` et un document par chapitre ;
+ * un chapitre déjà en cache avec la même empreinte n'est pas retéléchargé. */
+async function decodeContenu(code, d, cacheSeul = false) {
   if (!d) return null;
+  const lireJ = (k) => { try { return typeof d[k] === 'string' ? JSON.parse(d[k]) : []; } catch { return []; } };
   if (typeof d.chapitresJson === 'string') {
-    try {
-      const lire = (k) => { try { return typeof d[k] === 'string' ? JSON.parse(d[k]) : []; } catch { return []; } };
-      return { ...d, chapitres: JSON.parse(d.chapitresJson), glossaire: lire('glossaireJson'), auteurs: lire('auteursJson') };
-    } catch { return null; }
+    try { return { ...d, chapitres: JSON.parse(d.chapitresJson), glossaire: lireJ('glossaireJson'), auteurs: lireJ('auteursJson') }; } catch { return null; }
   }
-  return d;
+  if (!Array.isArray(d.index)) return d;
+  const trouves = {};
+  await Promise.all(d.index.map(async ({ id, h }) => {
+    try { const s = await getDocFromCache(chapitreRef(code, id)); if (s.exists() && s.data().h === h) trouves[id] = s.data().json; } catch { /* pas en cache */ }
+  }));
+  if (d.index.some(({ id }) => !(id in trouves))) {
+    try {
+      const snap = await (cacheSeul ? getDocsFromCache(chapitresCol(code)) : getDocs(chapitresCol(code)));
+      snap.forEach((s) => { const x = s.data(); if (d.index.some((e) => e.id === s.id && e.h === x.h)) trouves[s.id] = x.json; });
+    } catch (e) { if (e?.code === 'permission-denied') throw e; }
+  }
+  if (d.index.some(({ id }) => !(id in trouves))) return null; // incomplet (hors ligne, jamais téléchargé) : on n'affiche pas une matière tronquée
+  try {
+    return { ...d, chapitres: d.index.map(({ id }) => JSON.parse(trouves[id])), glossaire: lireJ('glossaireJson'), auteurs: lireJ('auteursJson') };
+  } catch { return null; }
 }
 
 export async function setMembres(membres) {
@@ -188,7 +217,7 @@ export async function getContenu(code) {
   if (!state.libOk) return null;
   try {
     const snap = await getDoc(contenuRef(code));
-    state.contenu[code] = snap.exists() ? decodeContenu(snap.data()) : null;
+    state.contenu[code] = snap.exists() ? await decodeContenu(code, snap.data()) : null;
   } catch (e) { state.contenu[code] = null; }
   return state.contenu[code];
 }
@@ -362,12 +391,27 @@ export async function importContenu(data, nomFichier = '', { forcer = false } = 
     e.ancienne = { code, actuelle, revision }; throw e;
   }
   const glossaire = Array.isArray(data.glossaire) ? data.glossaire : [], auteurs = Array.isArray(data.auteurs) ? data.auteurs : [];
-  // Garde-fou : un document Firestore ne peut pas dépasser 1 Mio. Au-delà de 900 Ko, l'écriture échouerait.
-  const taille = new Blob([JSON.stringify(data.chapitres) + JSON.stringify(glossaire) + JSON.stringify(auteurs) + JSON.stringify(data.matiere)]).size;
-  if (taille > 900 * 1024) throw new Error(`${code} pèse ${Math.round(taille / 1024)} Ko : trop lourd pour être enregistré (limite d’environ 1 Mo). Rien n’a été remplacé : signale-le à Claude.`);
-  info.taille = taille;
-  await setDoc(contenuRef(code), { matiere: data.matiere, chapitresJson: JSON.stringify(data.chapitres), glossaireJson: JSON.stringify(glossaire), auteursJson: JSON.stringify(auteurs), version: data.version || 1, importeLe, revision, fichier });
-  state.contenu[code] = { matiere: data.matiere, chapitres: data.chapitres, glossaire, auteurs, importeLe, revision, fichier };
+  // Un document par chapitre ; garde-fou : un document Firestore ne peut pas dépasser 1 Mio (marge à 900 Ko).
+  const ko = (t) => new Blob([t]).size, MAX = 900 * 1024;
+  const chap = data.chapitres.map((c) => { const json = JSON.stringify(c); return { id: c.id, json, h: empreinte(json) }; });
+  for (const c of chap) if (ko(c.json) > MAX) throw new Error(`Le chapitre ${c.id} pèse ${Math.round(ko(c.json) / 1024)} Ko : trop lourd pour être enregistré (limite d’environ 1 Mo). Rien n’a été remplacé : signale-le à Claude.`);
+  const index = chap.map(({ id, h }) => ({ id, h }));
+  const sommaire = { matiere: data.matiere, format: 2, index, glossaireJson: JSON.stringify(glossaire), auteursJson: JSON.stringify(auteurs), version: data.version || 1, importeLe, revision, fichier };
+  if (ko(JSON.stringify(sommaire)) > MAX) throw new Error(`Le glossaire de ${code} est trop lourd pour être enregistré. Rien n’a été remplacé : signale-le à Claude.`);
+  info.taille = chap.reduce((a, c) => a + ko(c.json), 0) + ko(JSON.stringify(sommaire));
+  // Écriture atomique : les chapitres modifiés, la suppression des chapitres disparus, puis le sommaire.
+  // Sommaire relu sur le serveur : un autre appareil a pu importer entre-temps.
+  let avant = [];
+  try { const s = await getDoc(contenuRef(code)); if (s.exists() && Array.isArray(s.data().index)) avant = s.data().index; } catch (e) { if (e?.code === 'permission-denied') throw e; }
+  const hAvant = Object.fromEntries(avant.map((e) => [e.id, e.h]));
+  const lot = writeBatch(db);
+  let ecrits = 0;
+  for (const c of chap) if (hAvant[c.id] !== c.h) { lot.set(chapitreRef(code, c.id), { json: c.json, h: c.h }); ecrits++; }
+  for (const e of avant) if (!chap.some((c) => c.id === e.id)) lot.delete(chapitreRef(code, e.id));
+  lot.set(contenuRef(code), sommaire);
+  await lot.commit();
+  info.chapitresEcrits = ecrits;
+  state.contenu[code] = { ...sommaire, chapitres: data.chapitres, glossaire, auteurs };
   info.glossaire = glossaire.length; info.auteurs = auteurs.length;
   info.revision = revision;
   // Crée la matière si elle n'existe pas encore (nouveau semestre, nouvelle matière…).

@@ -22,6 +22,11 @@ service cloud.firestore {
       allow read: if invite();
       allow write: if admin();
     }
+    // Un document par chapitre (depuis la version 3.4.0) : mêmes droits que la matière.
+    match /bibliotheque/{code}/chapitres/{chapitre} {
+      allow read: if invite();
+      allow write: if admin();
+    }
     // Signalements partagés : chacun·e écrit les siens, l'admin les lit tous et peut les retirer.
     match /signalements/{sid} {
       allow read: if admin();
